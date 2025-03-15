@@ -2,18 +2,15 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useCameraStore } from '../stores/cameraStore';
 
-// Constantes de configuração
-const ORIENTATION_DEBOUNCE = 500; // ms para debounce de orientação
-const CAMERA_RESTART_DELAY = 300; // ms de espera antes de reiniciar
-const CAMERA_INIT_RETRY_MAX = 3; // Número máximo de tentativas de inicialização
-const CAMERA_INIT_RETRY_DELAY = 1000; // ms entre tentativas de inicialização
+// Improved configuration constants
+const ORIENTATION_DEBOUNCE = 500; // ms for orientation debounce
+const CAMERA_RESTART_DELAY = 300; // ms wait before restarting
+const CAMERA_INIT_RETRY_MAX = 5; // Increased from 3 to 5
+const CAMERA_INIT_RETRY_DELAY_BASE = 1000; // Base ms between init attempts
+const VIDEO_CHECK_INTERVAL = 50; // More frequent checks for video element
 
 /**
- * Hook personalizado otimizado para gerenciar o acesso à câmera do dispositivo
- * com reinicialização estável e melhor tratamento de erros
- *
- * @param videoRef Referência para o elemento de vídeo HTML
- * @returns Objeto com funções e estado da câmera
+ * Enhanced camera hook with improved initialization and error recovery
  */
 export const useCamera = (
   videoRef: React.RefObject<HTMLVideoElement | null>,
@@ -27,15 +24,16 @@ export const useCamera = (
   const permissionCheckedRef = useRef(false);
   const initAttemptsRef = useRef(0);
   const videoElementCheckIntervalRef = useRef<number | null>(null);
+  const streamAttachmentAttempted = useRef(false);
 
-  // Usando useRef para variáveis de timer
+  // Using useRef for timer variables
   const debounceTimerRef = useRef<number | null>(null);
   const restartTimerRef = useRef<number | null>(null);
   const retryTimerRef = useRef<number | null>(null);
   const permissionCheckTimerRef = useRef<number | null>(null);
 
   /**
-   * Limpa um stream de vídeo de forma segura
+   * Safely cleans up a video stream
    */
   const cleanupStream = useCallback((stream?: MediaStream | null) => {
     const streamToClean = stream || streamRef.current;
@@ -44,29 +42,25 @@ export const useCamera = (
         try {
           track.stop();
         } catch (err) {
-          console.warn('Erro ao parar track de vídeo:', err);
+          console.warn('Error stopping video track:', err);
         }
       });
     }
   }, []);
 
   /**
-   * Verifica se a orientação realmente mudou significativamente
-   * para evitar reinicializações desnecessárias
+   * Checks if orientation has significantly changed
    */
   const hasOrientationChanged = useCallback((): boolean => {
     const isLandscape = window.innerWidth > window.innerHeight;
     const currentOrientation = isLandscape ? 'landscape' : 'portrait';
 
-    // Se não temos orientação anterior, consideramos que mudou
     if (!lastOrientation) {
       setLastOrientation(currentOrientation);
       return true;
     }
 
-    // Verifica se realmente mudou
     const changed = lastOrientation !== currentOrientation;
-
     if (changed) {
       setLastOrientation(currentOrientation);
     }
@@ -75,50 +69,113 @@ export const useCamera = (
   }, [lastOrientation]);
 
   /**
-   * Função que tenta anexar um stream existente ao elemento de vídeo
-   * Função importante que garante que o stream seja anexado assim que o elemento estiver disponível
+   * Enhanced function to attach an existing stream to the video element
+   * with improved error handling and retry logic
    */
   const attachExistingStream = useCallback(() => {
-    // Se não temos stream ou o elemento de vídeo não está disponível, não faz nada
-    if (!streamRef.current || !videoRef.current) return false;
+    // Improved logging
+    console.log('Attempting to attach stream to video element...');
+    streamAttachmentAttempted.current = true;
+
+    // If we don't have a stream, return false
+    if (!streamRef.current) {
+      console.warn('No stream available to attach');
+      return false;
+    }
+
+    // If we don't have a video element yet, schedule a retry
+    if (!videoRef.current) {
+      console.log('Video element not available, will retry shortly');
+
+      // Clear any existing interval
+      if (videoElementCheckIntervalRef.current !== null) {
+        clearInterval(videoElementCheckIntervalRef.current);
+      }
+
+      // Set up a more frequent check for the video element
+      videoElementCheckIntervalRef.current = window.setInterval(() => {
+        if (videoRef.current) {
+          console.log('Video element now available, attaching stream...');
+          const success = attachExistingStream();
+
+          if (success) {
+            clearInterval(videoElementCheckIntervalRef.current!);
+            videoElementCheckIntervalRef.current = null;
+            setActive(true);
+          }
+        }
+      }, VIDEO_CHECK_INTERVAL);
+
+      return false;
+    }
 
     try {
-      // Verifica se o stream já está anexado
+      // Check if the stream is already attached
       const currentStream = videoRef.current.srcObject as MediaStream | null;
 
-      // Se o stream já está anexado e é o mesmo, não faz nada
-      if (currentStream === streamRef.current) return true;
+      // If the stream is already attached and is the same, return true
+      if (currentStream === streamRef.current) {
+        console.log('Stream already attached to video element');
+        return true;
+      }
 
-      // Anexa o stream ao elemento de vídeo
+      // Attach the stream to the video element
       videoRef.current.srcObject = streamRef.current;
+      console.log('Stream attached to video element');
 
-      // Configura eventos
+      // Configure events
       videoRef.current.onloadedmetadata = () => {
         if (videoRef.current) {
           videoRef.current.play().catch(e => {
-            console.warn('Erro ao iniciar reprodução automática:', e);
+            console.warn('Error starting automatic playback:', e);
+            // Try again after a short delay
+            setTimeout(() => {
+              videoRef.current?.play().catch(e2 => {
+                console.error('Second playback attempt failed:', e2);
+              });
+            }, 500);
           });
         }
       };
 
-      console.log('Stream existente anexado ao elemento de vídeo');
+      // Add error handler
+      videoRef.current.onerror = event => {
+        console.error('Video element error:', event);
+        // Try to recover by reattaching the stream
+        setTimeout(() => attachExistingStream(), 1000);
+      };
+
       return true;
     } catch (err) {
-      console.error('Erro ao anexar stream existente:', err);
+      console.error('Error attaching stream to video element:', err);
+
+      // Try to recover by retrying once after a short delay
+      setTimeout(() => {
+        console.log('Retrying stream attachment after error...');
+        try {
+          if (videoRef.current && streamRef.current) {
+            videoRef.current.srcObject = streamRef.current;
+            return true;
+          }
+        } catch (retryErr) {
+          console.error('Stream attachment retry failed:', retryErr);
+        }
+      }, 1000);
+
       return false;
     }
-  }, [videoRef]);
+  }, [videoRef, setActive]);
 
   /**
-   * Verifica se já temos permissão para acessar a câmera sem precisar solicitar novamente
+   * Checks if we already have camera permission
    */
   const checkExistingPermission = useCallback(async () => {
     if (permissionCheckedRef.current) return;
 
     try {
-      console.log('Verificando permissões existentes da câmera...');
+      console.log('Checking existing camera permissions...');
 
-      // Verifica se navigator.permissions API está disponível
+      // Try using the Permissions API first
       if (navigator.permissions && navigator.permissions.query) {
         try {
           const result = await navigator.permissions.query({
@@ -126,26 +183,26 @@ export const useCamera = (
           });
 
           if (result.state === 'granted') {
-            console.log('Permissão de câmera já concedida pelo navegador');
+            console.log('Camera permission already granted by browser');
             setPermission(true);
             setError(null);
             permissionCheckedRef.current = true;
             return true;
           } else if (result.state === 'denied') {
-            console.log('Permissão de câmera negada pelo navegador');
+            console.log('Camera permission denied by browser');
             setPermission(false);
-            setError('Permissão de câmera negada pelo navegador');
+            setError('Camera permission denied by browser');
             permissionCheckedRef.current = true;
             return false;
           }
 
-          console.log('Estado da permissão:', result.state);
+          console.log('Permission state:', result.state);
         } catch (err) {
-          console.warn('Não foi possível verificar permissões via API:', err);
+          console.warn('Unable to check permissions via API:', err);
         }
       }
 
-      // Método alternativo: tenta obter um stream rapidamente e depois descartá-lo
+      // Alternative method: try to get a stream quickly and discard it
       const constraints = {
         video: {
           facingMode: 'environment',
@@ -158,10 +215,13 @@ export const useCamera = (
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
       if (stream) {
-        console.log('Permissão verificada com sucesso via getUserMedia');
+        console.log('Permission verified successfully via getUserMedia');
 
-        // Limpa o stream de teste - não precisamos dele agora
-        stream.getTracks().forEach(track => track.stop());
+        // Instead of discarding this test stream, let's use it!
+        streamRef.current = stream;
+
+        // Attempt to attach the stream right away
+        attachExistingStream();
 
         setPermission(true);
         setError(null);
@@ -169,118 +229,110 @@ export const useCamera = (
         return true;
       }
     } catch (err) {
-      // Se ocorrer um erro NotAllowedError, a permissão foi explicitamente negada
+      // Handle NotAllowedError as explicit permission denial
       if (err instanceof Error && err.name === 'NotAllowedError') {
-        console.log('Permissão de câmera explicitamente negada');
+        console.log('Camera permission explicitly denied');
         setPermission(false);
-        setError(
-          'Acesso à câmera negado. Verifique as permissões do navegador.',
-        );
+        setError('Camera access denied. Check browser permissions.');
         permissionCheckedRef.current = true;
         return false;
       }
 
-      console.log('Verificação de permissão existente falhou:', err);
+      console.log('Existing permission check failed:', err);
       return null;
     }
 
-    // Se chegamos aqui, a verificação foi inconclusiva
+    // If we get here, the check was inconclusive
     return null;
-  }, [setError, setPermission]);
+  }, [setError, setPermission, attachExistingStream]);
 
-  // Declaramos startCamera aqui, mas atribuímos depois para resolver a referência circular
+  // Declare startCamera here, but assign later due to circular reference
   let startCamera: () => Promise<void>;
 
   /**
-   * Função que solicita permissão da câmera diretamente, sem depender de outras condições
+   * Improved function that directly requests camera permission
    */
   const requestCameraPermission = useCallback(async () => {
-    // Primeiro, verifica se já temos permissão
+    // Reset initialization attempts when explicitly requesting permission
+    initAttemptsRef.current = 0;
+
+    // First, check if we already have permission
     const hasExistingPermission = await checkExistingPermission();
 
-    // Se já temos permissão confirmada, não precisamos solicitar novamente
+    // If we already have confirmed permission, no need to request again
     if (hasExistingPermission === true) {
-      console.log('Permissão já está concedida, iniciando câmera');
-      // Aqui usamos a variável startCamera que será atribuída depois
+      console.log('Permission already granted, starting camera');
+      // Here we use the startCamera variable that will be assigned later
       if (startCamera) {
         startCamera();
       } else {
-        console.warn('startCamera ainda não disponível');
+        console.warn('startCamera not yet available');
+        // Fallback: Create a timeout to start camera once it's available
+        setTimeout(() => {
+          if (startCamera) startCamera();
+        }, 100);
       }
       return;
     }
 
-    // Se permissão está explicitamente negada, não tentamos novamente
+    // If permission is explicitly denied, don't try again
     if (hasExistingPermission === false) {
-      console.log('Permissão já está negada, não solicitando novamente');
+      console.log('Permission already denied, not requesting again');
       return;
     }
 
-    // Reseta contador de tentativas de inicialização
-    initAttemptsRef.current = 0;
-
-    console.log('Solicitando permissão da câmera explicitamente');
+    console.log('Explicitly requesting camera permission');
 
     try {
-      // Solicita acesso à câmera com parâmetros mínimos
+      // Request camera access with minimal parameters
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment' },
         audio: false,
       });
 
-      // Se chegamos aqui, temos permissão
-      console.log('Permissão da câmera concedida');
+      // If we get here, we have permission
+      console.log('Camera permission granted');
 
-      // Em vez de descartar este stream, vamos guardá-lo para uso
+      // Save this stream for use
       streamRef.current = stream;
 
-      // Marca como permitido
+      // Mark as permitted
       setPermission(true);
       setError(null);
       permissionCheckedRef.current = true;
 
-      // Tenta anexar o stream ao elemento de vídeo
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        setActive(true);
-      } else {
-        // Inicia verificações periódicas para anexar o stream assim que o elemento estiver disponível
-        if (videoElementCheckIntervalRef.current === null) {
-          videoElementCheckIntervalRef.current = window.setInterval(() => {
-            if (videoRef.current) {
-              attachExistingStream();
-              setActive(true);
-              clearInterval(videoElementCheckIntervalRef.current!);
-              videoElementCheckIntervalRef.current = null;
-            }
-          }, 100);
-        }
-      }
+      // Try to attach the stream to the video element
+      attachExistingStream();
+      setActive(true);
 
-      // Tenta iniciar a câmera normalmente também
+      // Also try to start the camera normally
       if (startCamera) {
         startCamera();
       } else {
-        console.warn('startCamera ainda não disponível');
+        console.warn('startCamera not yet available');
+        // Fallback: Create a timeout to start camera once it's available
+        setTimeout(() => {
+          if (startCamera) startCamera();
+        }, 100);
       }
     } catch (err) {
-      console.error('Erro ao solicitar permissão da câmera:', err);
+      console.error('Error requesting camera permission:', err);
 
-      // Verifica o tipo específico de erro
+      // Check the specific error type
       if (err instanceof Error) {
         if (err.name === 'NotAllowedError') {
           setPermission(false);
-          setError('Acesso à câmera negado pelo usuário');
+          setError('Camera access denied by user');
         } else if (err.name === 'NotFoundError') {
           setPermission(false);
-          setError('Nenhuma câmera encontrada no dispositivo');
+          setError('No camera found on device');
         } else {
           setPermission(false);
-          setError(err.message || 'Erro ao acessar câmera');
+          setError(err.message || 'Error accessing camera');
         }
       } else {
         setPermission(false);
-        setError('Erro desconhecido ao acessar câmera');
+        setError('Unknown error accessing camera');
       }
 
       permissionCheckedRef.current = true;
@@ -291,76 +343,78 @@ export const useCamera = (
     setActive,
     setError,
     setPermission,
-    videoRef,
   ]);
 
   /**
-   * Inicia a câmera e configura o stream de vídeo
-   * Implementação otimizada para maior estabilidade
+   * Enhanced function to start the camera with improved error handling and retry logic
    */
   startCamera = useCallback(async () => {
-    // Limpa qualquer temporizador de retry pendente
+    // Clear any pending retry timer
     if (retryTimerRef.current) {
       window.clearTimeout(retryTimerRef.current);
       retryTimerRef.current = null;
     }
 
-    // Se já temos um stream, tentamos anexá-lo primeiro
+    // If we already have a stream, try to attach it first
     if (streamRef.current) {
+      console.log('Existing stream found, attempting to use it...');
       const attached = attachExistingStream();
       if (attached) {
         setActive(true);
-        console.log('Câmera iniciada com stream existente');
+        console.log('Camera started with existing stream');
         return;
       }
     }
 
     try {
-      // Evita múltiplas inicializações simultâneas
-      if (isAdjusting) return;
+      // Prevent multiple simultaneous initializations
+      if (isAdjusting) {
+        console.log('Camera adjustment already in progress, skipping');
+        return;
+      }
       setIsAdjusting(true);
 
-      // Verifica se API está disponível
+      // Check if API is available
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('API de câmera não suportada neste navegador');
+        throw new Error('Camera API not supported in this browser');
       }
 
-      // Se o elemento de vídeo não estiver disponível, configuramos verificações periódicas
+      // If the video element isn't available, set up periodic checks and continue anyway
       if (!videoRef.current) {
         console.log(
-          'Elemento de vídeo não disponível, configurando verificações periódicas',
+          'Video element not available, continuing anyway with periodic checks',
         );
 
         if (videoElementCheckIntervalRef.current === null) {
           videoElementCheckIntervalRef.current = window.setInterval(() => {
-            if (videoRef.current) {
-              console.log(
-                'Elemento de vídeo disponível, tentando iniciar câmera',
-              );
+            if (videoRef.current && streamRef.current) {
+              console.log('Video element now available, attaching stream');
               clearInterval(videoElementCheckIntervalRef.current!);
               videoElementCheckIntervalRef.current = null;
-              setIsAdjusting(false);
-              startCamera();
+              attachExistingStream();
+              setActive(true);
             }
-          }, 100);
+          }, VIDEO_CHECK_INTERVAL);
         }
-        return;
+
+        // IMPORTANT: We continue with initialization even without the video element
+        // This is a change from the original code which returned early
       }
 
-      // Obter dimensões atuais para determinar proporção ideal
+      // Get current dimensions to determine ideal ratio
       const isLandscape = window.innerWidth > window.innerHeight;
       const currentOrientation = isLandscape ? 'landscape' : 'portrait';
 
-      // Atualiza a orientação atual
+      // Update current orientation
       setLastOrientation(currentOrientation);
 
-      // Limpa stream anterior de forma segura
+      // Clean up previous stream safely
       cleanupStream();
 
-      // Determina constraints ideais com base no dispositivo e orientação
+      // Determine ideal constraints based on device and orientation
       const constraints: MediaStreamConstraints = {
         video: {
-          facingMode: 'environment', // Usa a câmera traseira
+          facingMode: 'environment', // Use back camera
           width: {
             min: 640,
             ideal: isLandscape ? 1280 : 720,
@@ -377,102 +431,69 @@ export const useCamera = (
         audio: false,
       };
 
-      console.log('Iniciando câmera com orientação:', currentOrientation);
-      console.log('Tentativa de inicialização:', initAttemptsRef.current + 1);
+      console.log(`Starting camera with orientation: ${currentOrientation}`);
+      console.log(`Initialization attempt: ${initAttemptsRef.current + 1}`);
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
-      // Salvamos a referência do stream primeiro
+      // Save the stream reference first
       streamRef.current = stream;
 
-      // Verificamos novamente se o elemento de vídeo está disponível
-      if (videoRef.current) {
-        // Configura callbacks antes de atribuir o stream
-        videoRef.current.onloadedmetadata = () => {
-          console.log('Metadados de vídeo carregados');
-          if (videoRef.current) {
-            videoRef.current.play().catch(e => {
-              console.warn('Erro ao iniciar reprodução automática:', e);
-            });
-          }
-        };
+      // Try to attach the stream, but don't block on it
+      attachExistingStream();
 
-        videoRef.current.onloadeddata = () => {
-          console.log('Dados de vídeo carregados');
-        };
+      // Update states regardless of attachment success - we got the stream!
+      setPermission(true);
+      setActive(true);
+      setError(null);
+      initAttemptsRef.current = 0; // Reset attempts after success
 
-        videoRef.current.onerror = e => {
-          console.error('Erro no elemento de vídeo:', e);
-        };
+      console.log('Camera initialized successfully');
 
-        // Atribui o stream ao elemento de vídeo
-        videoRef.current.srcObject = stream;
-
-        // Atualiza estados
-        setPermission(true);
-        setActive(true);
-        setError(null);
-        initAttemptsRef.current = 0; // Reset tentativas após sucesso
-
-        console.log('Câmera inicializada com sucesso');
-      } else {
-        // Se o elemento de vídeo ainda não está disponível, configuramos verificações periódicas
-        console.log(
-          'Elemento de vídeo ainda não disponível após obter stream, configurando verificações',
-        );
-
-        if (videoElementCheckIntervalRef.current === null) {
-          videoElementCheckIntervalRef.current = window.setInterval(() => {
-            if (videoRef.current) {
-              console.log('Elemento de vídeo disponível, anexando stream');
-              videoRef.current.srcObject = streamRef.current;
-              setActive(true);
-              clearInterval(videoElementCheckIntervalRef.current!);
-              videoElementCheckIntervalRef.current = null;
-            }
-          }, 100);
-        }
-      }
-
-      // Mesmo que tudo corra bem, definimos isTransitioning como false
-      // após um curto delay para garantir que a transição seja suave
+      // Even if everything went well, set isTransitioning to false
+      // after a short delay to ensure the transition is smooth
       setTimeout(() => {
         setIsTransitioning(false);
       }, 150);
     } catch (err) {
-      console.error('Erro ao acessar câmera:', err);
+      console.error('Error accessing camera:', err);
 
       const errorMessage =
-        err instanceof Error
-          ? err.message
-          : 'Erro desconhecido ao acessar câmera';
+        err instanceof Error ? err.message : 'Unknown error accessing camera';
 
       setError(errorMessage);
 
-      // Não alteramos o estado de permissão aqui, apenas se o erro for específico
+      // Don't change permission state here unless the error is specific
       if (err instanceof Error && err.name === 'NotAllowedError') {
         setPermission(false);
       }
 
-      // Incrementa contador de tentativas
+      // Increment attempt counter
       initAttemptsRef.current++;
 
-      // Se ainda não excedemos o número máximo de tentativas, tentamos novamente
+      // If we haven't exceeded the maximum number of attempts, try again with exponential backoff
       if (initAttemptsRef.current < CAMERA_INIT_RETRY_MAX) {
-        console.log(`Tentando novamente em ${CAMERA_INIT_RETRY_DELAY}ms...`);
+        const delay =
+          CAMERA_INIT_RETRY_DELAY_BASE *
+          Math.pow(1.5, initAttemptsRef.current - 1);
+        console.log(
+          `Retrying in ${delay}ms (attempt ${initAttemptsRef.current + 1}/${CAMERA_INIT_RETRY_MAX})...`,
+        );
+
         retryTimerRef.current = window.setTimeout(() => {
-          console.log(`Iniciando tentativa ${initAttemptsRef.current + 1}`);
+          console.log(`Starting attempt ${initAttemptsRef.current + 1}`);
           setIsAdjusting(false);
           startCamera();
-        }, CAMERA_INIT_RETRY_DELAY);
+        }, delay);
       } else {
         console.error(
-          `Excedido número máximo de tentativas (${CAMERA_INIT_RETRY_MAX})`,
+          `Exceeded maximum number of attempts (${CAMERA_INIT_RETRY_MAX})`,
         );
       }
 
       setIsTransitioning(false);
     } finally {
+      // Ensure isAdjusting is reset after a short delay
       setTimeout(() => {
         setIsAdjusting(false);
       }, 100);
@@ -488,10 +509,10 @@ export const useCamera = (
   ]);
 
   /**
-   * Para o streaming da câmera e limpa recursos
+   * Stops camera streaming and cleans up resources
    */
   const stopCamera = useCallback(() => {
-    // Limpa timers pendentes
+    // Clear pending timers
     if (debounceTimerRef.current) {
       window.clearTimeout(debounceTimerRef.current);
       debounceTimerRef.current = null;
@@ -525,40 +546,41 @@ export const useCamera = (
 
     streamRef.current = null;
     setActive(false);
+
+    console.log('Camera stopped and resources cleaned up');
   }, [cleanupStream, setActive, videoRef]);
 
   /**
-   * Adapta a câmera à mudança de orientação com estratégia de debounce otimizada
-   * e transição visual para o usuário
+   * Handles orientation changes with debouncing
    */
   const handleOrientationChange = useCallback(() => {
-    // Limpa timer anterior de debounce, se existir
+    // Clear previous debounce timer, if it exists
     if (debounceTimerRef.current) {
       window.clearTimeout(debounceTimerRef.current);
     }
 
-    // Usa uma função dedicada para verificar mudança real de orientação
+    // Use a dedicated function to check for real orientation change
     if (!hasOrientationChanged() || isAdjusting) {
       return;
     }
 
-    // Inicia transição visual antes de reiniciar a câmera
+    // Start visual transition before restarting the camera
     setIsTransitioning(true);
 
-    // Implementa debounce para evitar múltiplas reinicializações
-    // durante rotação do dispositivo
+    // Implement debounce to avoid multiple reinitializations
+    // during device rotation
     debounceTimerRef.current = window.setTimeout(() => {
-      // Vamos parar a câmera apenas se realmente houve mudança
+      // Only stop the camera if there was actually a change
       stopCamera();
 
-      // Pequeno delay antes de reiniciar para estabilidade
+      // Short delay before restarting for stability
       restartTimerRef.current = window.setTimeout(() => {
         startCamera();
       }, CAMERA_RESTART_DELAY);
     }, ORIENTATION_DEBOUNCE);
   }, [hasOrientationChanged, isAdjusting, startCamera, stopCamera]);
 
-  // Observa mudanças de orientação
+  // Watch for orientation changes
   useEffect(() => {
     window.addEventListener('resize', handleOrientationChange);
     window.addEventListener('orientationchange', handleOrientationChange);
@@ -567,7 +589,7 @@ export const useCamera = (
       window.removeEventListener('resize', handleOrientationChange);
       window.removeEventListener('orientationchange', handleOrientationChange);
 
-      // Limpa timers pendentes
+      // Clear pending timers
       if (debounceTimerRef.current) {
         window.clearTimeout(debounceTimerRef.current);
       }
@@ -592,21 +614,21 @@ export const useCamera = (
     };
   }, [handleOrientationChange, stopCamera]);
 
-  // Verifica permissões existentes ao montar o componente
+  // Check existing permissions on mount
   useEffect(() => {
-    // Pequeno atraso para garantir que a UI esteja pronta
+    // Short delay to ensure the UI is ready
     permissionCheckTimerRef.current = window.setTimeout(() => {
       checkExistingPermission().then(hasPermission => {
-        // Se já temos permissão, inicia a câmera diretamente
+        // If we already have permission, start the camera directly
         if (hasPermission === true) {
           startCamera();
         }
-        // Se a verificação foi inconclusiva, tenta solicitar permissão explicitamente
+        // If the check was inconclusive, try to request permission explicitly
         else if (hasPermission === null) {
           requestCameraPermission();
         }
       });
-    }, 500);
+    }, 300); // Reduced from 500ms to 300ms for faster startup
 
     return () => {
       if (permissionCheckTimerRef.current) {
@@ -614,11 +636,11 @@ export const useCamera = (
         permissionCheckTimerRef.current = null;
       }
     };
-  }, [checkExistingPermission, requestCameraPermission]);
+  }, [checkExistingPermission, requestCameraPermission, startCamera]);
 
-  // Tenta anexar o stream existente quando o elemento de vídeo é renderizado
+  // Try to attach the existing stream when the video element is rendered
   useEffect(() => {
-    // Se temos stream mas não temos elemento de vídeo, configuramos verificações periódicas
+    // If we have a stream but not a video element, set up periodic checks
     if (
       streamRef.current &&
       !videoRef.current &&
@@ -626,12 +648,14 @@ export const useCamera = (
     ) {
       videoElementCheckIntervalRef.current = window.setInterval(() => {
         if (videoRef.current) {
-          attachExistingStream();
-          setActive(true);
-          clearInterval(videoElementCheckIntervalRef.current!);
-          videoElementCheckIntervalRef.current = null;
+          const success = attachExistingStream();
+          if (success) {
+            setActive(true);
+            clearInterval(videoElementCheckIntervalRef.current!);
+            videoElementCheckIntervalRef.current = null;
+          }
         }
-      }, 100);
+      }, VIDEO_CHECK_INTERVAL);
     }
 
     return () => {
@@ -641,6 +665,25 @@ export const useCamera = (
       }
     };
   }, [attachExistingStream, setActive, videoRef]);
+
+  // Extra check for camera status - retry if not active after a delay
+  useEffect(() => {
+    // If we have permission but camera isn't active after 2 seconds, try again
+    if (
+      hasPermission === true &&
+      !isActive &&
+      streamAttachmentAttempted.current
+    ) {
+      const retryTimer = setTimeout(() => {
+        console.log(
+          'Camera not active despite having permission - attempting restart',
+        );
+        startCamera();
+      }, 2000);
+
+      return () => clearTimeout(retryTimer);
+    }
+  }, [hasPermission, isActive, startCamera]);
 
   return {
     startCamera,
