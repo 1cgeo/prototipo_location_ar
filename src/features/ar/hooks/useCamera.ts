@@ -22,6 +22,7 @@ export const useCamera = (
   const [lastOrientation, setLastOrientation] = useState<string | null>(null);
   const [isAdjusting, setIsAdjusting] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const permissionRequestedRef = useRef(false);
 
   // Usando useRef para variáveis de timer
   const debounceTimerRef = useRef<number | null>(null);
@@ -66,6 +67,40 @@ export const useCamera = (
 
     return changed;
   }, [lastOrientation]);
+
+  /**
+   * Função que solicita permissão da câmera diretamente, sem depender de outras condições
+   */
+  const requestCameraPermission = useCallback(async () => {
+    // Evita múltiplas solicitações
+    if (permissionRequestedRef.current) return;
+    permissionRequestedRef.current = true;
+
+    console.log('Solicitando permissão da câmera explicitamente');
+
+    try {
+      // Solicita acesso à câmera com parâmetros mínimos
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' },
+        audio: false,
+      });
+
+      // Limpa o stream obtido (apenas para validar permissão)
+      cleanupStream(stream);
+
+      // Marca como permitido
+      setPermission(true);
+      setError(null);
+      console.log('Permissão da câmera concedida');
+
+      // Agora que temos permissão, podemos iniciar a câmera com os parâmetros completos
+      startCamera();
+    } catch (err) {
+      console.error('Erro ao solicitar permissão da câmera:', err);
+      setPermission(false);
+      setError(err instanceof Error ? err.message : 'Erro ao acessar câmera');
+    }
+  }, [cleanupStream, setError, setPermission]);
 
   /**
    * Inicia a câmera e configura o stream de vídeo
@@ -127,6 +162,7 @@ export const useCamera = (
         audio: false,
       };
 
+      console.log('Iniciando câmera com orientação:', currentOrientation);
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
       if (videoRef.current) {
@@ -146,6 +182,8 @@ export const useCamera = (
         setPermission(true);
         setActive(true);
         setError(null);
+
+        console.log('Câmera inicializada com sucesso');
       }
 
       // Mesmo que tudo corra bem, definimos isTransitioning como false
@@ -253,9 +291,20 @@ export const useCamera = (
     };
   }, [handleOrientationChange, stopCamera]);
 
+  // Solicita permissão automaticamente ao montar o componente
+  useEffect(() => {
+    // Pequeno atraso para garantir que a UI esteja pronta
+    const timer = setTimeout(() => {
+      requestCameraPermission();
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [requestCameraPermission]);
+
   return {
     startCamera,
     stopCamera,
+    requestCameraPermission, // Expõe a função para uso externo
     isActive,
     hasPermission,
     error,
