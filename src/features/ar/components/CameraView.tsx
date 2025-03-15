@@ -1,5 +1,5 @@
 // Path: features\ar\components\CameraView.tsx
-import { useRef, useState, useCallback } from 'react';
+import { useRef, useState, useCallback, useEffect } from 'react';
 import { Box, Typography, Button, Alert } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
@@ -23,6 +23,7 @@ const CameraView: React.FC = () => {
   const { orientation, dimensions } = useScreenOrientation();
   const [isInitializing, setIsInitializing] = useState(true);
   const [debugMode, setDebugMode] = useState(false);
+  const initTimeoutRef = useRef<number | null>(null);
 
   // Acessa os hooks personalizados
   const {
@@ -78,6 +79,46 @@ const CameraView: React.FC = () => {
   const toggleDebugMode = useCallback(() => {
     setDebugMode(prev => !prev);
   }, []);
+
+  // Effect para inicializar automaticamente quando as permissões estiverem prontas
+  useEffect(() => {
+    // Se a câmera e localização estão OK, podemos continuar
+    if (cameraPermission === true && locationPermission === true) {
+      // Inicializa a câmera
+      startCamera();
+
+      // Se o timeout ainda não foi definido, definimos um
+      // para permitir que o app prossiga mesmo se o heading não estiver disponível
+      if (initTimeoutRef.current === null) {
+        // Espera um pouco para dar tempo para o heading ser carregado
+        // mas não espera infinitamente
+        initTimeoutRef.current = window.setTimeout(() => {
+          console.log(
+            'Timeout de inicialização atingido, continuando de qualquer forma',
+          );
+          setIsInitializing(false);
+        }, 3000); // Espera 3 segundos no máximo
+      }
+
+      // Se heading já estiver disponível, podemos continuar imediatamente
+      if (heading !== null) {
+        if (initTimeoutRef.current) {
+          clearTimeout(initTimeoutRef.current);
+          initTimeoutRef.current = null;
+        }
+        console.log('Heading disponível, continuando');
+        setIsInitializing(false);
+      }
+    }
+
+    // Limpeza ao desmontar
+    return () => {
+      if (initTimeoutRef.current) {
+        clearTimeout(initTimeoutRef.current);
+        initTimeoutRef.current = null;
+      }
+    };
+  }, [cameraPermission, locationPermission, heading, startCamera]);
 
   // Calcula o progresso de inicialização para o LoadingState
   const calculateInitProgress = () => {
