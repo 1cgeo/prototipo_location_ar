@@ -1,44 +1,53 @@
 // Path: features\ar\hooks\useScreenOrientation.ts
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
-type Orientation = 'portrait' | 'landscape';
+export type Orientation = 'portrait' | 'landscape';
+
+interface ScreenDimensions {
+  width: number;
+  height: number;
+}
 
 /**
- * Hook personalizado para detectar e responder a mudanças na orientação da tela
- * @returns Objeto com a orientação atual e dimensões da tela
+ * Hook to detect screen orientation and dimensions
  */
 export const useScreenOrientation = () => {
   const [orientation, setOrientation] = useState<Orientation>(
     window.innerWidth > window.innerHeight ? 'landscape' : 'portrait',
   );
-  const [dimensions, setDimensions] = useState({
+
+  const [dimensions, setDimensions] = useState<ScreenDimensions>({
     width: window.innerWidth,
     height: window.innerHeight,
   });
 
+  // Update dimensions and orientation on resize
+  const updateDimensions = useCallback(() => {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    setDimensions({ width, height });
+    setOrientation(width > height ? 'landscape' : 'portrait');
+  }, []);
+
   useEffect(() => {
-    const handleResize = () => {
-      const width = window.innerWidth;
-      const height = window.innerHeight;
+    // Initial update
+    updateDimensions();
 
-      setDimensions({ width, height });
-      setOrientation(width > height ? 'landscape' : 'portrait');
-    };
+    // Listen for window resize
+    window.addEventListener('resize', updateDimensions);
 
-    // Detecta mudanças de tamanho/orientação da janela
-    window.addEventListener('resize', handleResize);
-
-    // Evento específico para orientação em mobile
+    // Listen for orientation change (mobile)
     window.addEventListener('orientationchange', () => {
-      // Pequeno atraso para garantir que dimensões foram atualizadas
-      setTimeout(handleResize, 100);
+      // Short delay to ensure dimensions are updated
+      setTimeout(updateDimensions, 100);
     });
 
     return () => {
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('orientationchange', handleResize);
+      window.removeEventListener('resize', updateDimensions);
+      window.removeEventListener('orientationchange', updateDimensions);
     };
-  }, []);
+  }, [updateDimensions]);
 
   return { orientation, dimensions };
 };

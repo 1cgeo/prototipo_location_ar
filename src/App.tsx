@@ -8,7 +8,7 @@ import {
 import { CssBaseline, ThemeProvider, createTheme } from '@mui/material';
 import ARViewRoute from '@/routes/ARViewRoute';
 
-// Cria um tema customizado com cores mais adequadas para AR
+// Create a custom theme optimized for AR applications
 const theme = createTheme({
   palette: {
     mode: 'dark',
@@ -52,13 +52,9 @@ const theme = createTheme({
   },
 });
 
+// Create router with hash routing for GitHub Pages compatibility
 const router = createHashRouter(
-  createRoutesFromElements(
-    <Route>
-      {/* Rota principal para a visualização AR */}
-      <Route path="/" element={<ARViewRoute />} />
-    </Route>,
-  ),
+  createRoutesFromElements(<Route path="/" element={<ARViewRoute />} />),
 );
 
 function App() {

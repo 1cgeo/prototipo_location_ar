@@ -8,69 +8,52 @@ import {
 } from '../schemas/markerSchema';
 import { samplePOIs } from '../data/samplePOIs';
 
-// Interface que define o estado e ações relacionadas aos marcadores
 interface MarkersState {
-  // Estado
-  allMarkers: Marker[]; // Todos os marcadores disponíveis
-  visibleMarkers: MarkerWithDistance[]; // Marcadores atualmente visíveis no campo de visão
-  selectedMarkerId: string | null; // ID do marcador selecionado, se houver
-  validationError: string | null; // Erro de validação, se houver
+  allMarkers: Marker[];
+  visibleMarkers: MarkerWithDistance[];
+  selectedMarkerId: string | null;
+  error: string | null;
 
-  // Ações
   setVisibleMarkers: (markers: MarkerWithDistance[]) => void;
   selectMarker: (id: string | null) => void;
   loadMarkers: (markersData: MarkersCollection) => void;
 }
 
-/**
- * Valida e carrega os dados dos marcadores utilizando os schemas Zod
- * @param data Dados de marcadores a serem validados
- * @returns Array de marcadores validados ou undefined em caso de erro
- */
-const validateMarkersData = (
-  data: any,
-): { markers: Marker[] | undefined; error: string | null } => {
-  try {
-    const validData = MarkersCollectionSchema.parse(data);
-    return { markers: validData.features, error: null };
-  } catch (error) {
-    console.error('Erro de validação de dados dos marcadores:', error);
-    return {
-      markers: undefined,
-      error:
-        error instanceof Error
-          ? error.message
-          : 'Erro desconhecido ao validar marcadores',
-    };
-  }
-};
+export const useMarkersStore = create<MarkersState>(set => {
+  // Validate initial sample data
+  let initialMarkers: Marker[] = [];
+  let initialError: string | null = null;
 
-// Criação do store com Zustand
-export const useMarkersStore = create<MarkersState>((set, _get) => {
-  // Valida os dados de exemplo ao inicializar
-  const { markers, error } = validateMarkersData(samplePOIs);
+  try {
+    const validData = MarkersCollectionSchema.parse(samplePOIs);
+    initialMarkers = validData.features;
+  } catch (error) {
+    initialError =
+      error instanceof Error ? error.message : 'Invalid marker data';
+    console.error('Error validating sample data:', error);
+  }
 
   return {
-    // Estado inicial com marcadores de exemplo validados
-    allMarkers: markers || [],
+    allMarkers: initialMarkers,
     visibleMarkers: [],
     selectedMarkerId: null,
-    validationError: error,
+    error: initialError,
 
-    // Ações que modificam o estado
     setVisibleMarkers: markers => set({ visibleMarkers: markers }),
     selectMarker: id => set({ selectedMarkerId: id }),
 
-    // Carrega e valida novos dados de marcadores
     loadMarkers: markersData => {
-      const { markers, error } = validateMarkersData(markersData);
-      if (markers) {
+      try {
+        const validData = MarkersCollectionSchema.parse(markersData);
         set({
-          allMarkers: markers,
-          validationError: null,
+          allMarkers: validData.features,
+          error: null,
         });
-      } else {
-        set({ validationError: error });
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : 'Invalid marker data';
+        set({ error: errorMessage });
+        console.error('Error validating marker data:', error);
       }
     },
   };

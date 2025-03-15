@@ -1,22 +1,22 @@
 // Path: features\ar\components\LoadingState.tsx
-import { Box, Typography, CircularProgress, useTheme } from '@mui/material';
-import { motion } from 'framer-motion';
+import React from 'react';
+import { Box, Typography, CircularProgress } from '@mui/material';
 import ExploreIcon from '@mui/icons-material/Explore';
 
 interface LoadingStateProps {
-  message: string;
+  message?: string;
   progress?: number;
 }
 
-const LoadingState: React.FC<LoadingStateProps> = ({ message, progress }) => {
-  const theme = useTheme();
-
+/**
+ * Simplified loading state component
+ */
+const LoadingState: React.FC<LoadingStateProps> = ({
+  message = 'Loading...',
+  progress,
+}) => {
   return (
     <Box
-      component={motion.div}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
       sx={{
         position: 'absolute',
         top: 0,
@@ -33,35 +33,16 @@ const LoadingState: React.FC<LoadingStateProps> = ({ message, progress }) => {
         padding: 3,
       }}
     >
-      <Box
-        component={motion.div}
-        animate={{
-          scale: [1, 1.1, 1],
-          rotate: [0, 5, 0, -5, 0],
+      <ExploreIcon
+        sx={{
+          fontSize: 80,
+          color: 'primary.main',
+          animation: 'pulse 2s infinite',
         }}
-        transition={{
-          duration: 2,
-          repeat: Infinity,
-          repeatType: 'loop',
-        }}
-      >
-        <ExploreIcon
-          sx={{
-            fontSize: 80,
-            color: 'primary.main',
-          }}
-        />
-      </Box>
+      />
 
       <Typography
         variant="h5"
-        component={motion.h2}
-        animate={{ opacity: [0.7, 1, 0.7] }}
-        transition={{
-          duration: 1.5,
-          repeat: Infinity,
-          repeatType: 'loop',
-        }}
         textAlign="center"
         fontWeight="medium"
         sx={{ mb: 1 }}
@@ -76,9 +57,6 @@ const LoadingState: React.FC<LoadingStateProps> = ({ message, progress }) => {
             value={progress}
             size={100}
             thickness={4}
-            sx={{
-              color: theme.palette.primary.main,
-            }}
           />
           <Box
             sx={{

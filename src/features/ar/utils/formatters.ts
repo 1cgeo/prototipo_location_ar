@@ -1,20 +1,17 @@
 // Path: features\ar\utils\formatters.ts
+
 /**
- * Formata a distância com a unidade apropriada (m ou km)
- *
- * @param distanceInMeters Distância em metros
- * @param precision Precisão decimal (padrão: 0 para metros, 1 para quilômetros)
- * @returns String formatada com unidade
+ * Formats distance with appropriate units (m or km)
  */
 export const formatDistance = (
   distanceInMeters: number,
   precision?: number,
 ): string => {
   if (distanceInMeters < 1000) {
-    // Metros sem casa decimal
+    // Meters with no decimal places
     return `${Math.round(distanceInMeters)}m`;
   } else {
-    // Quilômetros com 1 casa decimal por padrão
+    // Kilometers with configurable precision (default: 1)
     const km = distanceInMeters / 1000;
     const p = precision !== undefined ? precision : 1;
     return `${km.toFixed(p)}km`;
@@ -22,26 +19,17 @@ export const formatDistance = (
 };
 
 /**
- * Converte azimute (graus) para ponto cardeal
- * Usando abreviações internacionais (N, NE, E, SE, S, SW, W, NW)
- *
- * @param azimuth Ângulo em graus (0-360)
- * @returns Abreviação do ponto cardeal (N, NE, E, etc)
+ * Converts azimuth (degrees) to cardinal direction
  */
 export const azimuthToCardinal = (azimuth: number): string => {
-  // Usa padrão internacional para pontos cardeais
+  // International standard for cardinal points
   const cardinals = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW', 'N'];
-  // 8 divisões, com 45° cada
+  // 8 divisions of 45° each
   return cardinals[Math.round(azimuth / 45) % 8];
 };
 
 /**
- * Formata coordenadas geográficas em formato legível
- *
- * @param lat Latitude
- * @param lng Longitude
- * @param format Formato (dec = decimal, dms = graus, minutos, segundos)
- * @returns String formatada
+ * Formats coordinates in a readable format
  */
 export const formatCoordinates = (
   lat: number,
@@ -51,7 +39,6 @@ export const formatCoordinates = (
   if (format === 'dec') {
     return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
   } else {
-    // Implementação de conversão para DMS (graus, minutos, segundos)
     const latDMS = decimalToDMS(lat, 'lat');
     const lngDMS = decimalToDMS(lng, 'lng');
     return `${latDMS} ${lngDMS}`;
@@ -59,11 +46,7 @@ export const formatCoordinates = (
 };
 
 /**
- * Converte coordenada decimal para formato DMS (graus, minutos, segundos)
- *
- * @param decimal Coordenada em formato decimal
- * @param type 'lat' para latitude, 'lng' para longitude
- * @returns String formatada em DMS
+ * Converts decimal coordinates to degrees, minutes, seconds format
  */
 const decimalToDMS = (decimal: number, type: 'lat' | 'lng'): string => {
   const absolute = Math.abs(decimal);
