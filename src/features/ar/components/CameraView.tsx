@@ -1,9 +1,10 @@
 // Path: features/ar/components/CameraView.tsx
 import React, { useRef, useState, useEffect } from 'react';
-import { Box, Typography, Button, CircularProgress, Snackbar, IconButton } from '@mui/material';
+import { Box, Typography, Button, CircularProgress, Snackbar, IconButton, Alert } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import BugReportIcon from '@mui/icons-material/BugReport';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import CameraAltIcon from '@mui/icons-material/CameraAlt';
 
 import { useCamera } from '../hooks/useCamera';
 import { useGeolocation } from '../hooks/useGeolocation';
@@ -24,12 +25,12 @@ const CameraView: React.FC = () => {
   const [isInitializing, setIsInitializing] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showDebugMode, setShowDebugMode] = useState(false);
-  const [maxWaitExceeded, setMaxWaitExceeded] = useState(false);
+  const [forceOverrideMode, setForceOverrideMode] = useState(false);
   const initTimeoutRef = useRef<number | null>(null);
   const maxWaitTimeoutRef = useRef<number | null>(null);
-  const attemptCountRef = useRef(0);
+  const startupTimestampRef = useRef(Date.now());
 
-  // Get direct access to camera store's setActive function
+  // Get direct access to camera store's setActive function for overrides
   const { setActive } = useCameraStore();
 
   // Get data from stores
@@ -75,15 +76,18 @@ const CameraView: React.FC = () => {
     }
   };
 
+  // Calculate how long the app has been initializing
+  const getStartupDuration = () => {
+    return Math.floor((Date.now() - startupTimestampRef.current) / 1000);
+  };
+
   // Initialize app when permissions are granted
   useEffect(() => {
     // Check if we have all required permissions
     if (cameraPermission === true && locationPermission === true) {
       // Start camera if not already active
-      if (!isActive) {
-        console.log('Permissions granted, starting camera');
+      if (!isActive && !forceOverrideMode) {
         startCamera();
-        attemptCountRef.current += 1;
       }
       
       // Set a timeout to move past initialization after a reasonable time
@@ -91,20 +95,19 @@ const CameraView: React.FC = () => {
         initTimeoutRef.current = window.setTimeout(() => {
           console.log('Init timeout reached, continuing');
           setIsInitializing(false);
-        }, 2000);
+        }, 2500);
       }
       
       // Set absolute maximum wait time to prevent getting stuck
       if (maxWaitTimeoutRef.current === null) {
         maxWaitTimeoutRef.current = window.setTimeout(() => {
           console.log('Maximum wait time exceeded');
-          setMaxWaitExceeded(true);
           setIsInitializing(false);
-        }, 8000);
+        }, 6000);
       }
       
-      // If camera becomes active or max wait time is exceeded, move past initialization
-      if (isActive || maxWaitExceeded) {
+      // If camera becomes active or we're in override mode, move past initialization
+      if (isActive || forceOverrideMode) {
         clearTimeouts();
         setIsInitializing(false);
       }
@@ -112,7 +115,7 @@ const CameraView: React.FC = () => {
     
     // Cleanup timeouts on unmount
     return clearTimeouts;
-  }, [cameraPermission, locationPermission, isActive, startCamera, maxWaitExceeded]);
+  }, [cameraPermission, locationPermission, isActive, startCamera, forceOverrideMode]);
 
   // Show any errors that occur
   useEffect(() => {
@@ -124,6 +127,13 @@ const CameraView: React.FC = () => {
       setErrorMessage(orientationError);
     }
   }, [cameraError, locationError, orientationError]);
+
+  // Handle override mode - skips camera completely if needed
+  const enableOverrideMode = () => {
+    console.log('OVERRIDE: Continuing without camera');
+    setForceOverrideMode(true);
+    setActive(true); // Pretend camera is active
+  };
 
   // Force reload function for when things get stuck
   const handleForceReload = () => {
@@ -160,7 +170,8 @@ const CameraView: React.FC = () => {
             <Typography>Heading: {heading !== null ? `${heading.toFixed(1)}°` : 'Unavailable'}</Typography>
             <Typography>Using Fallback: {useFallbackHeading ? 'Yes' : 'No'}</Typography>
             <Typography>Camera Permission: {cameraPermission === null ? 'Unknown' : cameraPermission ? 'Granted' : 'Denied'}</Typography>
-            <Typography>Startup Attempts: {attemptCountRef.current}</Typography>
+            <Typography>Override Mode: {forceOverrideMode ? 'Enabled' : 'Disabled'}</Typography>
+            <Typography>Initialization Time: {getStartupDuration()}s</Typography>
           </Box>
           
           <Box sx={{ mb: 2 }}>
@@ -170,22 +181,35 @@ const CameraView: React.FC = () => {
             <Typography>Accuracy: {coordinates.accuracy?.toFixed(1) || 'N/A'}m</Typography>
           </Box>
           
-          <Box sx={{ display: 'flex', gap: 2, mt: 2 }}>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mt: 2 }}>
             <Button 
               variant="contained" 
               onClick={() => setShowDebugMode(false)}
             >
-              Return to AR View
+              RETURN TO AR VIEW
             </Button>
             
             <Button 
-              variant="outlined"
+              variant="contained"
               color="warning"
               onClick={handleForceReload}
               startIcon={<RefreshIcon />}
             >
-              Force Reload
+              FORCE RELOAD
             </Button>
+            
+            {!isActive && (
+              <Button
+                variant="contained"
+                color="success"
+                onClick={() => {
+                  setActive(true);
+                  setForceOverrideMode(true);
+                }}
+              >
+                FORCE CAMERA ACTIVE
+              </Button>
+            )}
           </Box>
         </Box>
       </ErrorBoundary>
@@ -203,14 +227,20 @@ const CameraView: React.FC = () => {
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            bgcolor: 'background.default'
+            bgcolor: 'background.default',
+            position: 'relative'
           }}
         >
           <LoadingState message="Initializing AR View..." />
           
-          <Box sx={{ position: 'absolute', bottom: 16, display: 'flex', gap: 2 }}>
+          {/* Hidden video element to help with initialization */}
+          <Box sx={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0, overflow: 'hidden' }}>
+            <video ref={videoRef} autoPlay playsInline muted />
+          </Box>
+          
+          <Box sx={{ position: 'absolute', bottom: 24, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
             <Button
-              variant="outlined"
+              variant="contained"
               size="small"
               onClick={() => setIsInitializing(false)}
             >
@@ -220,11 +250,9 @@ const CameraView: React.FC = () => {
             <Button
               variant="outlined"
               size="small"
-              color="warning"
-              onClick={handleForceReload}
-              startIcon={<RefreshIcon />}
+              onClick={() => setShowDebugMode(true)}
             >
-              Reload
+              Show Debug Info
             </Button>
           </Box>
         </Box>
@@ -233,7 +261,10 @@ const CameraView: React.FC = () => {
   }
 
   // If camera isn't active but we've passed initialization, show a loading spinner with enhanced options
-  if (!isActive) {
+  if (!isActive && !forceOverrideMode) {
+    const startupTime = getStartupDuration();
+    const showForceOptions = startupTime >= 5; // Show force options after 5 seconds
+    
     return (
       <ErrorBoundary>
         <Box
@@ -243,66 +274,73 @@ const CameraView: React.FC = () => {
             flexDirection: 'column',
             alignItems: 'center',
             justifyContent: 'center',
-            bgcolor: 'background.default'
+            bgcolor: 'background.default',
+            padding: 2
           }}
         >
-          {/* Hidden video element - this helps with initialization */}
-          <Box sx={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }}>
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              style={{ width: 1, height: 1 }}
-            />
+          {/* Hidden video element to help with initialization */}
+          <Box sx={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0, overflow: 'hidden' }}>
+            <video ref={videoRef} autoPlay playsInline muted />
           </Box>
           
-          <CircularProgress />
-          <Typography variant="body1" sx={{ mt: 2, mb: 3 }}>
+          <CircularProgress size={50} color="primary" />
+          <Typography variant="h6" sx={{ mt: 3, mb: 1 }}>
             Starting camera...
           </Typography>
           
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, alignItems: 'center' }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            Waiting for camera initialization ({startupTime}s)
+          </Typography>
+          
+          {/* Show warning after a while */}
+          {showForceOptions && (
+            <Alert severity="warning" sx={{ mb: 3, maxWidth: 450 }}>
+              Camera initialization is taking longer than expected. This may be due to browser restrictions 
+              or hardware issues. You can try the options below.
+            </Alert>
+          )}
+          
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, width: '100%', maxWidth: 350 }}>
             <Button
               variant="contained"
               color="primary"
-              onClick={() => {
-                attemptCountRef.current += 1;
-                startCamera();
-              }}
-              startIcon={<RefreshIcon />}
+              onClick={startCamera}
+              startIcon={<CameraAltIcon />}
+              fullWidth
             >
-              Retry Camera ({attemptCountRef.current > 0 ? `Attempt ${attemptCountRef.current + 1}` : 'First Try'})
+              Retry Camera
             </Button>
             
             <Button
               variant="outlined"
               onClick={() => setShowDebugMode(true)}
+              startIcon={<BugReportIcon />}
+              fullWidth
             >
               Debug Mode
             </Button>
             
-            {(attemptCountRef.current >= 2 || maxWaitExceeded) && (
-              <Button
-                variant="outlined"
-                color="warning"
-                onClick={handleForceReload}
-              >
-                Force Page Reload
-              </Button>
-            )}
-            
-            {(attemptCountRef.current >= 1 || maxWaitExceeded) && (
-              <Button
-                size="small"
-                onClick={() => {
-                  // Force the camera to be considered active - now using imported setActive
-                  console.log('Manually forcing camera active');
-                  setActive(true);
-                }}
-              >
-                Force Continue (Manual Override)
-              </Button>
+            {showForceOptions && (
+              <>
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  onClick={handleForceReload}
+                  startIcon={<RefreshIcon />}
+                  fullWidth
+                >
+                  Reload Page
+                </Button>
+                
+                <Button
+                  variant="outlined"
+                  color="success"
+                  onClick={enableOverrideMode}
+                  fullWidth
+                >
+                  Continue Without Camera
+                </Button>
+              </>
             )}
           </Box>
         </Box>
@@ -310,7 +348,7 @@ const CameraView: React.FC = () => {
     );
   }
 
-  // Main AR view
+  // Main AR view - now supporting both camera and override mode
   return (
     <ErrorBoundary>
       <Box
@@ -318,26 +356,48 @@ const CameraView: React.FC = () => {
           position: 'relative',
           width: '100%',
           height: '100%',
-          overflow: 'hidden'
+          overflow: 'hidden',
+          bgcolor: 'background.default' // Background color helps in override mode
         }}
       >
-        {/* Camera video element */}
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            transition: isTransitioning ? 'opacity 0.3s' : 'none',
-            opacity: isTransitioning ? 0.5 : 1
-          }}
-        />
+        {/* Camera video element - only shown if not in override mode */}
+        {!forceOverrideMode && (
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              opacity: isTransitioning ? 0.5 : 1
+            }}
+          />
+        )}
+        
+        {/* Override mode notice */}
+        {forceOverrideMode && (
+          <Box
+            sx={{
+              position: 'absolute',
+              top: '30%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 5,
+              textAlign: 'center',
+              maxWidth: '80%',
+              opacity: 0.7
+            }}
+          >
+            <Typography variant="body2" color="white">
+              Running in override mode - camera not available
+            </Typography>
+          </Box>
+        )}
 
         {/* AR Overlay with markers */}
         {coordinates.latitude && coordinates.longitude && heading !== null && (
