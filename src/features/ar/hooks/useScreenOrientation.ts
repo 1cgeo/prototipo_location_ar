@@ -1,7 +1,7 @@
 // Path: features\ar\hooks\useScreenOrientation.ts
 import { useState, useEffect, useCallback } from 'react';
 
-export type Orientation = 'portrait' | 'landscape';
+type Orientation = 'portrait' | 'landscape';
 
 interface ScreenDimensions {
   width: number;

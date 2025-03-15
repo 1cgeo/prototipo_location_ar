@@ -1,4 +1,4 @@
-// Path: features/ar/hooks/useCamera.ts
+// Path: features\ar\hooks\useCamera.ts
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useCameraStore } from '../stores/cameraStore';
 
@@ -7,314 +7,451 @@ interface UseCameraProps {
 }
 
 /**
- * Completely reworked camera hook that addresses endless retry issues
+ * Enhanced camera hook with improved initialization, error handling and cleanup
  */
 export const useCamera = ({ videoRef }: UseCameraProps) => {
-  const { isActive, hasPermission, error, setActive, setPermission, setError } = useCameraStore();
-  const streamRef = useRef<MediaStream | null>(null);
+  // Get store methods but don't depend on their values for rerenders
+  const { setActive, setPermission, setError } = useCameraStore();
+
+  // Local state to track what's happening
+  const [isActive, setLocalActive] = useState(false);
+  const [hasPermission, setLocalPermission] = useState<boolean | null>(null);
+  const [error, setLocalError] = useState<string | null>(null);
   const [isTransitioning, setIsTransitioning] = useState(false);
+
+  // Refs to track internal state without triggering rerenders
+  const streamRef = useRef<MediaStream | null>(null);
   const hasAttemptedRef = useRef(false);
+  const isInitializingRef = useRef(false);
   const videoAttachedRef = useRef(false);
-  
+  const cameraTimeoutRef = useRef<number | null>(null);
+
   /**
-   * Safely cleans up a video stream
+   * Logs both to console and maintains a log history for in-app display
+   */
+  const logEvent = useCallback(
+    (message: string, type: 'info' | 'error' | 'warn' = 'info') => {
+      const timestamp = new Date().toISOString().split('T')[1].slice(0, 8);
+      const logEntry = `[${timestamp}] ${message}`;
+
+      switch (type) {
+        case 'error':
+          console.error(logEntry);
+          break;
+        case 'warn':
+          console.warn(logEntry);
+          break;
+        default:
+          console.log(logEntry);
+      }
+
+      // We'll add these logs to the debug UI later
+      return logEntry;
+    },
+    [],
+  );
+
+  /**
+   * Safely and thoroughly cleans up a video stream
    */
   const cleanupStream = useCallback(() => {
+    logEvent('Cleaning up camera stream');
+
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => {
         try {
           track.stop();
+          logEvent(`Stopped track: ${track.kind}`);
         } catch (err) {
           // Silent cleanup
         }
       });
       streamRef.current = null;
     }
-    
+
     // Also clean video element
     if (videoRef.current) {
-      videoRef.current.srcObject = null;
-      videoRef.current.onloadedmetadata = null;
-      videoRef.current.onloadeddata = null;
-      videoRef.current.onerror = null;
+      try {
+        videoRef.current.srcObject = null;
+        videoRef.current.onloadedmetadata = null;
+        videoRef.current.onloadeddata = null;
+        videoRef.current.onerror = null;
+        logEvent('Cleaned video element');
+      } catch (err) {
+        logEvent(`Error cleaning video element: ${err}`, 'error');
+      }
     }
-    
+
+    // Clear any pending timeout
+    if (cameraTimeoutRef.current) {
+      clearTimeout(cameraTimeoutRef.current);
+      cameraTimeoutRef.current = null;
+    }
+
     videoAttachedRef.current = false;
-  }, [videoRef]);
+  }, [logEvent, videoRef]);
+
+  /**
+   * Updates both local and global state
+   */
+  const updateCameraState = useCallback(
+    (
+      isActive: boolean,
+      hasPermission: boolean | null,
+      errorMessage: string | null,
+    ) => {
+      // Update local state
+      setLocalActive(isActive);
+      setLocalPermission(hasPermission);
+      setLocalError(errorMessage);
+
+      // Update global state
+      setActive(isActive);
+      if (hasPermission !== null) setPermission(hasPermission);
+      setError(errorMessage);
+
+      logEvent(
+        `Camera state updated: active=${isActive}, permission=${hasPermission}, error=${errorMessage || 'none'}`,
+      );
+    },
+    [logEvent, setActive, setError, setPermission],
+  );
 
   /**
    * Attaches stream to video element with enhanced reliability
    */
-  const attachStream = useCallback((stream: MediaStream): boolean => {
-    if (!videoRef.current) {
-      console.error('No video element available');
-      return false;
-    }
-    
-    try {
-      // Clean up any existing event listeners first to prevent duplicates
-      videoRef.current.onloadedmetadata = null;
-      videoRef.current.onloadeddata = null;
-      videoRef.current.onerror = null;
-      
-      // Directly set stream
-      videoRef.current.srcObject = stream;
-      videoAttachedRef.current = true;
-      
-      // Handle video loaded event
-      const handleVideoReady = () => {
-        if (!videoRef.current) return;
-        
-        try {
-          videoRef.current.play()
-            .then(() => {
-              console.log('✅ Camera playing successfully');
-              setActive(true);
-            })
-            .catch(err => {
-              console.error('⚠️ Video play error:', err.name);
-              
-              // Mobile browsers often block autoplay - in AR contexts
-              // most browsers make an exception, but we'll handle it just in case
-              if (err.name === 'NotAllowedError') {
-                console.log('⚠️ Autoplay blocked - using manual play workaround');
-                
-                // For AR use cases, we'll still consider camera active and
-                // let user tap to interact if needed
-                setActive(true);
-              } else {
-                setError(`Camera playback error: ${err.name}`);
-              }
-            });
-        } catch (err) {
-          console.error('⚠️ General video error:', err);
-          setError('Camera playback failed');
-        }
-      };
-      
-      // Set up multiple event handlers to increase chances of successful initialization
-      videoRef.current.onloadedmetadata = handleVideoReady;
-      videoRef.current.onloadeddata = handleVideoReady;
-      
-      // Handle video errors
-      videoRef.current.onerror = (event) => {
-        console.error('⚠️ Video element error:', event);
-        setError('Video element error');
-      };
-      
-      return true;
-    } catch (err) {
-      console.error('⚠️ Error attaching stream:', err);
-      setError('Failed to display camera feed');
-      return false;
-    }
-  }, [setActive, setError, videoRef]);
+  const attachStream = useCallback(
+    (stream: MediaStream): boolean => {
+      if (!videoRef.current) {
+        logEvent('No video element available', 'error');
+        return false;
+      }
+
+      try {
+        // Clean up any existing event listeners first to prevent duplicates
+        videoRef.current.onloadedmetadata = null;
+        videoRef.current.onloadeddata = null;
+        videoRef.current.onerror = null;
+
+        // Store the stream
+        streamRef.current = stream;
+
+        // Directly set stream
+        videoRef.current.srcObject = stream;
+        videoAttachedRef.current = true;
+        logEvent('Stream attached to video element');
+
+        // Handle video loaded event
+        const handleVideoReady = () => {
+          if (!videoRef.current) return;
+
+          try {
+            videoRef.current
+              .play()
+              .then(() => {
+                logEvent('✅ Camera playing successfully');
+                updateCameraState(true, true, null);
+              })
+              .catch(err => {
+                logEvent(`⚠️ Video play error: ${err.name}`, 'warn');
+
+                // Mobile browsers often block autoplay - in AR contexts
+                // most browsers make an exception, but we'll handle it just in case
+                if (err.name === 'NotAllowedError') {
+                  logEvent(
+                    '⚠️ Autoplay blocked - using manual play workaround',
+                    'warn',
+                  );
+
+                  // For AR use cases, we'll still consider camera active and
+                  // let user tap to interact if needed
+                  updateCameraState(true, true, null);
+                } else {
+                  updateCameraState(
+                    false,
+                    true,
+                    `Camera playback error: ${err.name}`,
+                  );
+                }
+              });
+          } catch (err) {
+            logEvent(`⚠️ General video error: ${err}`, 'error');
+            updateCameraState(false, true, 'Camera playback failed');
+          }
+        };
+
+        // Set up multiple event handlers to increase chances of successful initialization
+        videoRef.current.onloadedmetadata = handleVideoReady;
+        videoRef.current.onloadeddata = handleVideoReady;
+
+        // Handle video errors
+        videoRef.current.onerror = event => {
+          logEvent(`⚠️ Video element error: ${event}`, 'error');
+          updateCameraState(false, true, 'Video element error');
+        };
+
+        return true;
+      } catch (err) {
+        logEvent(`⚠️ Error attaching stream: ${err}`, 'error');
+        updateCameraState(false, true, 'Failed to display camera feed');
+        return false;
+      }
+    },
+    [logEvent, updateCameraState, videoRef],
+  );
 
   /**
    * Main camera initialization function
    * Completely redesigned with better fallbacks and error detection
    */
   const startCamera = useCallback(async () => {
-    // Don't retry if already active
-    if (isActive) {
-      console.log('📷 Camera already active, skipping start');
+    // Prevent concurrent initialization
+    if (isInitializingRef.current) {
+      logEvent('Camera initialization already in progress, skipping');
       return;
     }
-    
+
+    // Don't retry if already active
+    if (isActive) {
+      logEvent('📷 Camera already active, skipping start');
+      return;
+    }
+
+    isInitializingRef.current = true;
     hasAttemptedRef.current = true;
-    console.log('📷 Starting camera...');
+    logEvent('📷 Starting camera...');
     setIsTransitioning(true);
-    
+
     try {
       // Cleanup any existing stream
       cleanupStream();
-      
+
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Camera API not supported in this browser');
       }
-      
+
       // Simple camera constraints - trying to keep it simple for better compatibility
       const constraints: MediaStreamConstraints = {
         video: { facingMode: 'environment' },
-        audio: false
+        audio: false,
       };
-      
+
       // Request camera stream
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      console.log('✅ Camera stream obtained');
-      
-      // Store the stream reference
-      streamRef.current = stream;
-      
+      logEvent('✅ Camera stream obtained');
+
       // Check for video tracks
       if (stream.getVideoTracks().length === 0) {
         throw new Error('No video tracks in camera stream');
       }
-      
+
       // Update permission state
-      setPermission(true);
-      
+      updateCameraState(isActive, true, null);
+
       // Attach to video element
       if (attachStream(stream)) {
-        console.log('✅ Stream attached to video element');
-        
+        logEvent('✅ Stream attached to video element');
+
         // Set a fallback timer to force camera active if events don't fire
-        setTimeout(() => {
+        cameraTimeoutRef.current = window.setTimeout(() => {
           if (!isActive) {
-            console.log('⚠️ Fallback: Forcing camera active after timeout');
-            setActive(true);
+            logEvent(
+              '⚠️ Fallback: Forcing camera active after timeout',
+              'warn',
+            );
+            updateCameraState(true, true, null);
           }
         }, 2000);
       } else {
-        console.error('⚠️ Failed to attach stream to video element');
-        setError('Failed to initialize video display');
+        logEvent('⚠️ Failed to attach stream to video element', 'error');
+        updateCameraState(false, true, 'Failed to initialize video display');
         throw new Error('Failed to attach stream');
       }
     } catch (err) {
-      console.error('⚠️ Camera error:', err);
-      
+      logEvent(`⚠️ Camera error: ${err}`, 'error');
+
       // Handle specific error types
       if (err instanceof Error) {
-        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-          console.log('❌ Camera permission denied');
-          setPermission(false);
-          setError('Camera access denied. Please check browser permissions.');
-        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
-          setError('No camera found on this device');
-        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-          setError('Camera is in use by another application');
+        if (
+          err.name === 'NotAllowedError' ||
+          err.name === 'PermissionDeniedError'
+        ) {
+          logEvent('❌ Camera permission denied', 'error');
+          updateCameraState(
+            false,
+            false,
+            'Camera access denied. Please check browser permissions.',
+          );
+        } else if (
+          err.name === 'NotFoundError' ||
+          err.name === 'DevicesNotFoundError'
+        ) {
+          updateCameraState(false, true, 'No camera found on this device');
+        } else if (
+          err.name === 'NotReadableError' ||
+          err.name === 'TrackStartError'
+        ) {
+          updateCameraState(
+            false,
+            true,
+            'Camera is in use by another application',
+          );
         } else if (err.name === 'OverconstrainedError') {
-          setError('Camera cannot satisfy the requested constraints');
+          updateCameraState(
+            false,
+            true,
+            'Camera cannot satisfy the requested constraints',
+          );
         } else {
-          setError(`Camera error: ${err.message || err.name || 'Unknown error'}`);
+          updateCameraState(
+            false,
+            hasPermission,
+            `Camera error: ${err.message || err.name || 'Unknown error'}`,
+          );
         }
       } else {
-        setError('Unknown camera error');
+        updateCameraState(false, hasPermission, 'Unknown camera error');
       }
-      
-      setActive(false);
     } finally {
       setIsTransitioning(false);
-      
+      isInitializingRef.current = false;
+
       // Critically important: if video element has a stream but we didn't activate,
       // force set active state to true after a delay
-      setTimeout(() => {
-        if (videoRef.current?.srcObject && !isActive && videoAttachedRef.current) {
-          console.log('⚠️ Stream detected but camera not active - forcing active state');
-          setActive(true);
+      cameraTimeoutRef.current = window.setTimeout(() => {
+        if (
+          videoRef.current?.srcObject &&
+          !isActive &&
+          videoAttachedRef.current
+        ) {
+          logEvent(
+            '⚠️ Stream detected but camera not active - forcing active state',
+            'warn',
+          );
+          updateCameraState(true, true, null);
         }
       }, 1000);
     }
-  }, [attachStream, cleanupStream, isActive, setActive, setError, setPermission, videoRef]);
+  }, [
+    attachStream,
+    cleanupStream,
+    hasPermission,
+    isActive,
+    logEvent,
+    updateCameraState,
+    videoRef,
+  ]);
 
   /**
    * Stops the camera
    */
   const stopCamera = useCallback(() => {
-    console.log('📷 Stopping camera');
+    logEvent('📷 Stopping camera');
     cleanupStream();
-    setActive(false);
-  }, [cleanupStream, setActive]);
+    updateCameraState(false, hasPermission, null);
+  }, [cleanupStream, hasPermission, logEvent, updateCameraState]);
 
   /**
    * Requests camera permission with better error handling
    */
   const requestCameraPermission = useCallback(async () => {
-    console.log('📷 Requesting camera permission');
+    logEvent('📷 Requesting camera permission');
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
-        audio: false
+        audio: false,
       });
-      
-      console.log('✅ Camera permission granted');
-      setPermission(true);
-      setError(null);
-      
+
+      logEvent('✅ Camera permission granted');
+      updateCameraState(false, true, null);
+
       // Store and attach the stream
       streamRef.current = stream;
       attachStream(stream);
     } catch (err) {
-      console.error('❌ Error requesting camera permission:', err);
-      
+      logEvent(`❌ Error requesting camera permission: ${err}`, 'error');
+
       if (err instanceof Error && err.name === 'NotAllowedError') {
-        setPermission(false);
-        setError('Camera permission denied');
+        updateCameraState(false, false, 'Camera permission denied');
       } else {
-        setPermission(false);
-        setError('Error accessing camera');
+        updateCameraState(false, false, 'Error accessing camera');
       }
     }
-  }, [attachStream, setError, setPermission]);
+  }, [attachStream, logEvent, updateCameraState]);
 
   // Handle orientation changes
   useEffect(() => {
     const handleOrientationChange = () => {
       // Only restart if already active
       if (isActive) {
-        console.log('📱 Orientation changed, restarting camera');
+        logEvent('📱 Orientation changed, restarting camera');
         stopCamera();
-        
+
         // Brief delay to allow cleanup
         setTimeout(() => {
           startCamera();
-        }, 300);
+        }, 500);
       }
     };
-    
+
     window.addEventListener('orientationchange', handleOrientationChange);
-    
+
     return () => {
       window.removeEventListener('orientationchange', handleOrientationChange);
     };
-  }, [isActive, startCamera, stopCamera]);
-  
+  }, [isActive, logEvent, startCamera, stopCamera]);
+
   // Check permissions on mount and auto-start camera if granted
   useEffect(() => {
     const checkPermissions = async () => {
       // Only run this once
       if (hasAttemptedRef.current) return;
-      
+
       try {
         // Try to use Permissions API if available
         if (navigator.permissions && navigator.permissions.query) {
           try {
-            const result = await navigator.permissions.query({ name: 'camera' as PermissionName });
-            
+            const result = await navigator.permissions.query({
+              name: 'camera' as PermissionName,
+            });
+
             if (result.state === 'granted') {
-              console.log('✅ Camera permission already granted');
-              setPermission(true);
+              logEvent('✅ Camera permission already granted');
+              updateCameraState(false, true, null);
               startCamera();
             } else if (result.state === 'denied') {
-              console.log('❌ Camera permission denied');
-              setPermission(false);
+              logEvent('❌ Camera permission denied');
+              updateCameraState(false, false, null);
             } else {
-              console.log('⚠️ Camera permission status:', result.state);
+              logEvent(`⚠️ Camera permission status: ${result.state}`);
               // For 'prompt' state, wait for user to request
             }
             return;
           } catch (err) {
-            console.log('⚠️ Permissions API error, falling back to direct access');
+            logEvent(
+              '⚠️ Permissions API error, falling back to direct access',
+              'warn',
+            );
           }
         }
-        
+
         // If Permissions API fails or isn't available, try direct access
         // This will either get a stream (permission granted) or throw (denied/prompt)
-        console.log('📷 Trying direct camera access');
+        logEvent('📷 Trying direct camera access');
         startCamera();
       } catch (err) {
-        console.error('❌ Permission check error:', err);
+        logEvent(`❌ Permission check error: ${err}`, 'error');
       }
     };
-    
+
     // Run permission check
     checkPermissions();
-    
+
     // Cleanup on unmount
     return () => {
       stopCamera();
     };
-  }, [setPermission, startCamera, stopCamera]);
+  }, [logEvent, startCamera, stopCamera, updateCameraState]);
 
   return {
     startCamera,
@@ -323,6 +460,7 @@ export const useCamera = ({ videoRef }: UseCameraProps) => {
     isActive,
     hasPermission,
     error,
-    isTransitioning
+    isTransitioning,
+    logEvent,
   };
 };
