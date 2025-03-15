@@ -1,6 +1,6 @@
 // Path: features\ar\components\CameraView.tsx
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { Box, Typography, Button, Alert } from '@mui/material';
+import { Box, Typography, Button, Alert, CircularProgress } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
@@ -26,6 +26,7 @@ const CameraView: React.FC = () => {
   const [debugMode, setDebugMode] = useState(false);
   const initTimeoutRef = useRef<number | null>(null);
   const hasAttemptedInitRef = useRef(false);
+  const forceRenderRef = useRef(0); // Ref para forçar re-renderização em intervalos
 
   // Acessa os hooks personalizados
   const {
@@ -59,8 +60,23 @@ const CameraView: React.FC = () => {
   // Função para forçar solicitação de permissão da câmera
   const forceRequestCamera = useCallback(() => {
     console.log('Forçando solicitação de permissão da câmera');
+    hasAttemptedInitRef.current = false; // Reset da flag para permitir nova tentativa
     requestCameraPermission();
   }, [requestCameraPermission]);
+
+  // Força re-renderização periódica no modo debug para atualizar valores
+  useEffect(() => {
+    if (debugMode) {
+      const timer = setInterval(() => {
+        forceRenderRef.current += 1; // Alterar a ref para forçar re-renderização
+        // Trick to force re-render without setState
+        // eslint-disable-next-line no-self-assign
+        videoRef.current = videoRef.current;
+      }, 500); // Atualiza a cada 500ms
+      
+      return () => clearInterval(timer);
+    }
+  }, [debugMode]);
 
   // Função para forçar solicitação de permissão de localização
   const forceRequestLocation = useCallback(() => {
@@ -90,31 +106,33 @@ const CameraView: React.FC = () => {
 
   // Effect para inicializar automaticamente quando as permissões estiverem prontas
   useEffect(() => {
-    // Evita múltiplas tentativas
-    if (hasAttemptedInitRef.current) return;
-    
     // Se a câmera e localização estão OK, podemos continuar
     if (cameraPermission === true && locationPermission === true) {
-      // Marca que já tentamos inicializar
-      hasAttemptedInitRef.current = true;
-      
-      // Inicializa a câmera
-      startCamera();
-      
-      // Se o timeout ainda não foi definido, definimos um
-      // para permitir que o app prossiga mesmo se o heading não estiver disponível
-      if (initTimeoutRef.current === null) {
-        console.log("Definindo timeout de inicialização");
-        // Espera um pouco para dar tempo para o heading ser carregado
-        // mas não espera infinitamente
-        initTimeoutRef.current = window.setTimeout(() => {
-          console.log("Timeout de inicialização atingido, continuando de qualquer forma");
-          setIsInitializing(false);
-        }, 3000); // Espera 3 segundos no máximo
+      // Se não tentamos inicializar ainda
+      if (!hasAttemptedInitRef.current) {
+        // Marca que já tentamos inicializar
+        hasAttemptedInitRef.current = true;
+        
+        console.log("Inicializando câmera");
+        
+        // Inicializa a câmera
+        startCamera();
+        
+        // Se o timeout ainda não foi definido, definimos um
+        // para permitir que o app prossiga mesmo se o heading não estiver disponível
+        if (initTimeoutRef.current === null) {
+          console.log("Definindo timeout de inicialização");
+          // Espera um pouco para dar tempo para o heading ser carregado
+          // mas não espera infinitamente
+          initTimeoutRef.current = window.setTimeout(() => {
+            console.log("Timeout de inicialização atingido, continuando de qualquer forma");
+            setIsInitializing(false);
+          }, 3000); // Espera 3 segundos no máximo
+        }
       }
       
-      // Se heading já estiver disponível, podemos continuar imediatamente
-      if (heading !== null) {
+      // Se heading já estiver disponível e estamos inicializando, podemos continuar imediatamente
+      if (heading !== null && isInitializing) {
         if (initTimeoutRef.current) {
           clearTimeout(initTimeoutRef.current);
           initTimeoutRef.current = null;
@@ -131,7 +149,7 @@ const CameraView: React.FC = () => {
         initTimeoutRef.current = null;
       }
     };
-  }, [cameraPermission, locationPermission, heading, startCamera]);
+  }, [cameraPermission, locationPermission, heading, startCamera, isInitializing]);
 
   // Calcula o progresso de inicialização para o LoadingState
   const calculateInitProgress = useCallback(() => {
@@ -169,15 +187,25 @@ const CameraView: React.FC = () => {
         <Box
           sx={{
             padding: 2,
-            height: '100%',
+            height: '100vh',
             display: 'flex',
             flexDirection: 'column',
             bgcolor: 'background.paper',
             color: 'text.primary',
+            overflow: 'auto', // Permite rolagem
+            overflowX: 'hidden', // Evita rolagem horizontal
+            '&::-webkit-scrollbar': {
+              display: 'block', // Exibe a barra de rolagem
+              width: '8px',
+            },
+            '&::-webkit-scrollbar-thumb': {
+              backgroundColor: 'rgba(0,0,0,0.2)',
+              borderRadius: '4px',
+            },
           }}
         >
           <Typography variant="h5" gutterBottom>
-            Modo de Depuração
+            Modo de Depuração {forceRenderRef.current > 0 ? `(${forceRenderRef.current})` : ''}
           </Typography>
 
           <Alert severity="info" sx={{ mb: 2 }}>
@@ -243,27 +271,48 @@ const CameraView: React.FC = () => {
           <Box sx={{ mb: 2 }}>
             <Typography variant="subtitle1">Câmera:</Typography>
             <Typography>Estado: {isActive ? 'Ativa' : 'Inativa'}</Typography>
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              style={{
-                width: '100%',
-                height: 200,
-                objectFit: 'cover',
-                marginTop: 8,
-                border: '1px solid #ccc',
-                borderRadius: 8,
-                backgroundColor: '#000',
-              }}
-            />
+            {isActive ? (
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                style={{
+                  width: '100%',
+                  height: 200,
+                  objectFit: 'cover',
+                  marginTop: 8,
+                  border: '1px solid #ccc',
+                  borderRadius: 8,
+                  backgroundColor: '#000',
+                }}
+              />
+            ) : (
+              <Box 
+                sx={{ 
+                  height: 200, 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  border: '1px solid #ccc',
+                  borderRadius: 8,
+                  backgroundColor: '#111',
+                  marginTop: 1
+                }}
+              >
+                <Typography color="error">Câmera inativa</Typography>
+              </Box>
+            )}
           </Box>
 
-          <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1, pb: 4 }}>
             <Button
               variant="contained"
               color="primary"
-              onClick={forceRequestCamera}
+              onClick={() => {
+                forceRequestCamera();
+                // Inicia câmera diretamente após solicitar permissão
+                setTimeout(() => startCamera(), 1000);
+              }}
               startIcon={<CameraAltIcon />}
             >
               Solicitar Permissão da Câmera
@@ -285,6 +334,16 @@ const CameraView: React.FC = () => {
               startIcon={<RefreshIcon />}
             >
               Recarregar Aplicativo
+            </Button>
+
+            <Button 
+              variant="contained"
+              color="success"
+              onClick={() => {
+                startCamera();
+              }}
+            >
+              Iniciar Câmera
             </Button>
 
             <Button variant="outlined" onClick={handleContinueAnyway}>
@@ -343,6 +402,41 @@ const CameraView: React.FC = () => {
               Continuar Assim
             </Button>
           </Box>
+        </Box>
+      </ErrorBoundary>
+    );
+  }
+
+  // Se a câmera não está ativa mas passamos do estado de inicialização, 
+  // tentamos iniciar novamente e mostramos um estado de carregamento
+  if (!isActive && !isInitializing) {
+    // Tenta iniciar a câmera
+    startCamera();
+    
+    return (
+      <ErrorBoundary>
+        <Box
+          sx={{
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            bgcolor: 'background.default',
+          }}
+        >
+          <CircularProgress color="primary" />
+          <Typography variant="body1" sx={{ mt: 2, mb: 4 }}>
+            Iniciando câmera...
+          </Typography>
+          <Button
+            variant="contained"
+            color="primary"
+            size="small"
+            onClick={toggleDebugMode}
+          >
+            Modo Depuração
+          </Button>
         </Box>
       </ErrorBoundary>
     );

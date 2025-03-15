@@ -38,9 +38,41 @@ body {
   user-select: none;
 }
 
-/* Esconde barras de rolagem */
+/* Esconde barras de rolagem por padrão, mas permite override */
 ::-webkit-scrollbar {
   display: none;
+}
+
+/* Para elementos com classe .allow-scrollbar, exibimos a barra de rolagem */
+.allow-scrollbar::-webkit-scrollbar {
+  display: block;
+  width: 8px;
+  height: 8px;
+}
+
+.allow-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+
+.allow-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+}
+
+.allow-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* Overrides para modo de depuração */
+.debug-container {
+  overflow: auto !important;
+  height: 100vh !important;
+}
+
+.debug-container::-webkit-scrollbar {
+  display: block !important;
+  width: 8px !important;
 }
 
 /* Estilos específicos para AR */

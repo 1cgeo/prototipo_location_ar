@@ -5,6 +5,8 @@ import { useCameraStore } from '../stores/cameraStore';
 // Constantes de configuração
 const ORIENTATION_DEBOUNCE = 500; // ms para debounce de orientação
 const CAMERA_RESTART_DELAY = 300; // ms de espera antes de reiniciar
+const CAMERA_INIT_RETRY_MAX = 3; // Número máximo de tentativas de inicialização
+const CAMERA_INIT_RETRY_DELAY = 1000; // ms entre tentativas de inicialização
 
 /**
  * Hook personalizado otimizado para gerenciar o acesso à câmera do dispositivo
@@ -23,10 +25,12 @@ export const useCamera = (
   const [isAdjusting, setIsAdjusting] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const permissionRequestedRef = useRef(false);
+  const initAttemptsRef = useRef(0);
 
   // Usando useRef para variáveis de timer
   const debounceTimerRef = useRef<number | null>(null);
   const restartTimerRef = useRef<number | null>(null);
+  const retryTimerRef = useRef<number | null>(null);
 
   /**
    * Limpa um stream de vídeo de forma segura
@@ -72,10 +76,14 @@ export const useCamera = (
    * Função que solicita permissão da câmera diretamente, sem depender de outras condições
    */
   const requestCameraPermission = useCallback(async () => {
+    // Reseta contador de tentativas de inicialização
+    initAttemptsRef.current = 0;
+    
     // Evita múltiplas solicitações
-    if (permissionRequestedRef.current) return;
-    permissionRequestedRef.current = true;
-
+    if (permissionRequestedRef.current) {
+      permissionRequestedRef.current = false; // Resets to allow new requests
+    }
+    
     console.log('Solicitando permissão da câmera explicitamente');
 
     try {
@@ -107,6 +115,12 @@ export const useCamera = (
    * Implementação otimizada para maior estabilidade
    */
   const startCamera = useCallback(async () => {
+    // Limpa qualquer temporizador de retry pendente
+    if (retryTimerRef.current) {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    
     try {
       // Evita múltiplas inicializações simultâneas
       if (isAdjusting) return;
@@ -149,10 +163,12 @@ export const useCamera = (
           width: {
             min: 640,
             ideal: isLandscape ? 1280 : 720,
+            max: 1920,
           },
           height: {
             min: 480,
             ideal: isLandscape ? 720 : 1280,
+            max: 1080,
           },
 
           // Configurações adicionais para qualidade e performance
@@ -163,6 +179,8 @@ export const useCamera = (
       };
 
       console.log('Iniciando câmera com orientação:', currentOrientation);
+      console.log('Tentativa de inicialização:', initAttemptsRef.current + 1);
+      
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
       if (videoRef.current) {
@@ -182,8 +200,11 @@ export const useCamera = (
         setPermission(true);
         setActive(true);
         setError(null);
+        initAttemptsRef.current = 0; // Reset tentativas após sucesso
 
         console.log('Câmera inicializada com sucesso');
+      } else {
+        throw new Error('Elemento de vídeo não disponível');
       }
 
       // Mesmo que tudo corra bem, definimos isTransitioning como false
@@ -198,7 +219,22 @@ export const useCamera = (
           ? err.message
           : 'Erro desconhecido ao acessar câmera',
       );
-      setPermission(false);
+      
+      // Incrementa contador de tentativas
+      initAttemptsRef.current++;
+      
+      // Se ainda não excedemos o número máximo de tentativas, tentamos novamente
+      if (initAttemptsRef.current < CAMERA_INIT_RETRY_MAX) {
+        console.log(`Tentando novamente em ${CAMERA_INIT_RETRY_DELAY}ms...`);
+        retryTimerRef.current = window.setTimeout(() => {
+          console.log(`Iniciando tentativa ${initAttemptsRef.current + 1}`);
+          startCamera();
+        }, CAMERA_INIT_RETRY_DELAY);
+      } else {
+        console.error(`Excedido número máximo de tentativas (${CAMERA_INIT_RETRY_MAX})`);
+        setPermission(false);
+      }
+      
       setIsTransitioning(false);
     } finally {
       setIsAdjusting(false);
@@ -226,6 +262,11 @@ export const useCamera = (
     if (restartTimerRef.current) {
       window.clearTimeout(restartTimerRef.current);
       restartTimerRef.current = null;
+    }
+    
+    if (retryTimerRef.current) {
+      window.clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
     }
 
     cleanupStream();
@@ -286,6 +327,10 @@ export const useCamera = (
       if (restartTimerRef.current) {
         window.clearTimeout(restartTimerRef.current);
       }
+      
+      if (retryTimerRef.current) {
+        window.clearTimeout(retryTimerRef.current);
+      }
 
       stopCamera();
     };
@@ -295,11 +340,14 @@ export const useCamera = (
   useEffect(() => {
     // Pequeno atraso para garantir que a UI esteja pronta
     const timer = setTimeout(() => {
-      requestCameraPermission();
+      if (!isActive && !permissionRequestedRef.current) {
+        permissionRequestedRef.current = true;
+        requestCameraPermission();
+      }
     }, 500);
 
     return () => clearTimeout(timer);
-  }, [requestCameraPermission]);
+  }, [isActive, requestCameraPermission]);
 
   return {
     startCamera,
