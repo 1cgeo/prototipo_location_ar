@@ -16,7 +16,7 @@ import {
   LinearProgress,
   Chip,
   Grid,
-  alpha, // Importação adicionada
+  alpha,
 } from '@mui/material';
 import CameraAltIcon from '@mui/icons-material/CameraAlt';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
@@ -109,6 +109,23 @@ const PermissionRequest: React.FC<PermissionRequestProps> = ({
     if (locationPermission === true) progress += 50;
     return progress;
   }, [cameraPermission, locationPermission]);
+
+  // Função específica para solicitar acesso à câmera
+  const requestCameraAccess = async () => {
+    try {
+      // Tenta acessar a câmera explicitamente
+      await navigator.mediaDevices.getUserMedia({ video: true });
+      // Se chegar aqui, a permissão foi concedida
+      console.log('Permissão de câmera concedida');
+
+      // Continua com o restante das permissões
+      onRequestPermissions();
+    } catch (err) {
+      console.error('Erro ao solicitar acesso à câmera:', err);
+      // Mesmo com erro, tentamos continuar com as outras permissões
+      onRequestPermissions();
+    }
+  };
 
   // Determina qual ícone exibir para o dispositivo
   const getDeviceIcon = () => {
@@ -430,7 +447,6 @@ const PermissionRequest: React.FC<PermissionRequestProps> = ({
                   <Typography variant="body2" fontWeight="bold">
                     Câmera
                   </Typography>
-                  {/* Corrigido: condicionais para icon prop no Chip */}
                   {cameraPermission === true ? (
                     <Chip
                       label="Permitido"
@@ -478,7 +494,6 @@ const PermissionRequest: React.FC<PermissionRequestProps> = ({
                   <Typography variant="body2" fontWeight="bold">
                     Localização
                   </Typography>
-                  {/* Corrigido: condicionais para icon prop no Chip */}
                   {locationPermission === true ? (
                     <Chip
                       label="Permitido"
@@ -561,7 +576,7 @@ const PermissionRequest: React.FC<PermissionRequestProps> = ({
 
         <Button
           variant="contained"
-          onClick={onRequestPermissions}
+          onClick={requestCameraAccess}
           startIcon={<CameraAltIcon />}
           fullWidth
           size="large"

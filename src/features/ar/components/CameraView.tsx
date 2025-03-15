@@ -7,9 +7,11 @@ import {
   IconButton,
   useTheme,
   Tooltip,
+  Button,
 } from '@mui/material';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import BugReportIcon from '@mui/icons-material/BugReport';
+import RefreshIcon from '@mui/icons-material/Refresh';
 import { useNavigate } from 'react-router-dom';
 
 import { useCamera } from '../hooks/useCamera';
@@ -33,10 +35,12 @@ const CameraView: React.FC = () => {
   const { orientation, dimensions } = useScreenOrientation();
   const [isInitializing, setIsInitializing] = useState(true);
   const [showDebugInfo, setShowDebugInfo] = useState(false);
+  const [loadTimeout, setLoadTimeout] = useState(false);
 
   // Usando uma referência para evitar múltiplas mudanças de estado e rerenders
   const previousOrientationRef = useRef<string>(orientation);
   const orientationChangeTimerRef = useRef<number | null>(null);
+  const loadingTimeoutRef = useRef<number | null>(null);
 
   // Acessa os hooks personalizados
   const {
@@ -113,6 +117,37 @@ const CameraView: React.FC = () => {
     }
   }, [cameraPermission, locationPermission, startCamera]);
 
+  // Detecta se o app está demorando muito para carregar
+  useEffect(() => {
+    // Se estiver inicializando, configuramos um timeout
+    if (isInitializing) {
+      loadingTimeoutRef.current = window.setTimeout(() => {
+        // Se ainda estiver inicializando após o timeout, mostramos a opção de reload
+        if (isInitializing) {
+          setLoadTimeout(true);
+        }
+      }, 10000); // 10 segundos
+    }
+
+    return () => {
+      // Limpa o timer quando o componente é desmontado ou não está mais inicializando
+      if (loadingTimeoutRef.current) {
+        window.clearTimeout(loadingTimeoutRef.current);
+        loadingTimeoutRef.current = null;
+      }
+    };
+  }, [isInitializing]);
+
+  // Função para recarregar a aplicação
+  const handleReload = useCallback(() => {
+    window.location.reload();
+  }, []);
+
+  // Função para continuar com fallback (sem sensor de orientação)
+  const handleContinueWithoutSensors = useCallback(() => {
+    setIsInitializing(false);
+  }, []);
+
   // Calcula o progresso de inicialização para o LoadingState
   const calculateInitProgress = () => {
     let progress = 0;
@@ -146,6 +181,59 @@ const CameraView: React.FC = () => {
         message={getLoadingMessage()}
         progress={calculateInitProgress()}
       />
+    );
+  }
+
+  // Mostra opções de fallback se demorar muito para carregar
+  if (isInitializing && loadTimeout) {
+    return (
+      <Box
+        sx={{
+          position: 'relative',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 3,
+          bgcolor: 'background.default',
+        }}
+      >
+        <Typography variant="h5" gutterBottom>
+          Carregamento está demorando...
+        </Typography>
+
+        <Typography variant="body1" sx={{ mb: 3, textAlign: 'center' }}>
+          Pode haver um problema com os sensores do dispositivo ou permissões.
+        </Typography>
+
+        <Box
+          sx={{
+            display: 'flex',
+            gap: 2,
+            flexDirection: 'column',
+            width: '100%',
+            maxWidth: 300,
+          }}
+        >
+          <Button
+            variant="contained"
+            startIcon={<RefreshIcon />}
+            onClick={handleReload}
+            fullWidth
+          >
+            Recarregar aplicativo
+          </Button>
+
+          <Button
+            variant="outlined"
+            onClick={handleContinueWithoutSensors}
+            fullWidth
+          >
+            Continuar sem sensores
+          </Button>
+        </Box>
+      </Box>
     );
   }
 
@@ -205,20 +293,20 @@ const CameraView: React.FC = () => {
       {isActive &&
         coordinates.latitude &&
         coordinates.longitude &&
-        heading !== null && (
+        (heading !== null || !isInitializing) && (
           <AROverlay
             latitude={coordinates.latitude}
             longitude={coordinates.longitude}
-            heading={heading}
+            heading={heading || 0}
             orientation={orientation}
             dimensions={dimensions}
           />
         )}
 
       {/* Indicador de azimute */}
-      {heading !== null && !selectedMarkerId && (
+      {(heading !== null || !isInitializing) && !selectedMarkerId && (
         <AzimuthIndicator
-          heading={heading}
+          heading={heading || 0}
           isLandscape={isLandscape}
           isCalibrated={isCalibrated}
         />
@@ -316,6 +404,21 @@ const CameraView: React.FC = () => {
           <Typography variant="caption" sx={{ display: 'block' }}>
             Dimensões: {dimensions.width}x{dimensions.height}
           </Typography>
+          <Typography variant="caption" sx={{ display: 'block' }}>
+            Camera: {isActive ? 'Ativa' : 'Inativa'}
+          </Typography>
+          <Typography variant="caption" sx={{ display: 'block' }}>
+            Permissões: C:{cameraPermission ? 'Sim' : 'Não'}, L:
+            {locationPermission ? 'Sim' : 'Não'}
+          </Typography>
+          {orientationError && (
+            <Typography
+              variant="caption"
+              sx={{ display: 'block', color: 'error.main' }}
+            >
+              Erro: {orientationError}
+            </Typography>
+          )}
         </Box>
       )}
     </Box>

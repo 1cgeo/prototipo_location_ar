@@ -34,6 +34,7 @@ export const useDeviceOrientation = () => {
   const lastProcessTimeRef = useRef(0);
   const consecutiveStableReadingsRef = useRef(0);
   const deviceOrientationRef = useRef<'portrait' | 'landscape' | null>(null);
+  const permissionRequestedRef = useRef(false);
 
   // Atualiza a orientação do dispositivo para melhor calibração
   useEffect(() => {
@@ -296,8 +297,28 @@ export const useDeviceOrientation = () => {
     [processHeading],
   );
 
+  // Função para lidar com dispositivos que não têm sensores de orientação
+  const handleNoSensors = useCallback(() => {
+    console.log(
+      'Dispositivo sem sensores de orientação ou permissão negada - usando modo de fallback',
+    );
+
+    // Fallback: usar um valor de heading fixo ou simulado
+    // Isso permite que o app continue funcionando mesmo sem sensores
+    const simulatedHeading = 0; // Norte como direção padrão
+    setHeading(simulatedHeading);
+    setIsCalibrated(true); // Consideramos "calibrado" para continuar o fluxo do app
+
+    // Limpa qualquer mensagem de erro para permitir que o app continue
+    setErrorMessage(null);
+  }, [setHeading]);
+
   // Função principal para inicializar os sensores
   const initOrientationSensors = useCallback(async () => {
+    // Evita múltiplas solicitações de permissão
+    if (permissionRequestedRef.current) return;
+    permissionRequestedRef.current = true;
+
     try {
       // Reset do estado antes de inicializar
       setIsCalibrated(false);
@@ -312,7 +333,8 @@ export const useDeviceOrientation = () => {
       const hasAbsoluteOrientation = 'ondeviceorientationabsolute' in window;
 
       if (!hasDeviceOrientation) {
-        setErrorMessage('Seu dispositivo não suporta os sensores necessários');
+        console.warn('Dispositivo não suporta orientação - usando fallback');
+        handleNoSensors();
         return;
       }
 
@@ -337,70 +359,87 @@ export const useDeviceOrientation = () => {
         }
       }, CALIBRATION_WINDOW);
 
+      let permissionGranted = true;
+
       // Solicita permissão em iOS (>= 13)
       if (
         typeof DeviceOrientationEvent !== 'undefined' &&
         typeof (DeviceOrientationEvent as any).requestPermission === 'function'
       ) {
         try {
+          console.log(
+            'Solicitando permissão para orientação do dispositivo (iOS)',
+          );
           const permission = await (
             DeviceOrientationEvent as any
           ).requestPermission();
           setPermissionState(permission);
 
           if (permission !== 'granted') {
-            setErrorMessage('Permissão para acessar sensores negada');
+            console.warn('Permissão para sensores negada:', permission);
+            permissionGranted = false;
+            handleNoSensors();
             return;
           }
         } catch (err) {
           console.error('Erro ao solicitar permissão para sensores:', err);
-          setErrorMessage('Erro ao acessar sensores de orientação');
+          permissionGranted = false;
+          handleNoSensors();
           return;
         }
       }
 
-      // Registra o listener adequado com base no suporte do dispositivo
-      if (hasAbsoluteOrientation) {
-        window.addEventListener(
-          'deviceorientationabsolute',
-          handleAbsoluteOrientation,
-          { passive: true },
-        );
-      } else {
-        window.addEventListener(
-          'deviceorientation',
-          handleRelativeOrientation,
-          { passive: true },
-        );
-      }
+      if (permissionGranted) {
+        console.log('Registrando listeners de orientação');
 
-      // Tenta também DeviceMotion para iOS
-      try {
-        if (
-          'DeviceMotionEvent' in window &&
-          typeof (DeviceMotionEvent as any).requestPermission === 'function'
-        ) {
-          await (DeviceMotionEvent as any).requestPermission();
+        // Registra o listener adequado com base no suporte do dispositivo
+        if (hasAbsoluteOrientation) {
+          window.addEventListener(
+            'deviceorientationabsolute',
+            handleAbsoluteOrientation,
+            { passive: true },
+          );
+        } else {
+          window.addEventListener(
+            'deviceorientation',
+            handleRelativeOrientation,
+            { passive: true },
+          );
         }
-      } catch (err) {
-        // Ignora erros do DeviceMotion, pois não é essencial
-        console.warn('DeviceMotion não disponível:', err);
+
+        // Tenta também DeviceMotion para iOS
+        try {
+          if (
+            'DeviceMotionEvent' in window &&
+            typeof (DeviceMotionEvent as any).requestPermission === 'function'
+          ) {
+            await (DeviceMotionEvent as any).requestPermission();
+          }
+        } catch (err) {
+          // Ignora erros do DeviceMotion, pois não é essencial
+          console.warn('DeviceMotion não disponível:', err);
+        }
       }
     } catch (error) {
       console.error('Erro ao inicializar sensores de orientação:', error);
-      setErrorMessage(
-        error instanceof Error
-          ? `Erro: ${error.message}`
-          : 'Falha ao inicializar sensores de orientação',
-      );
+      handleNoSensors();
     }
-  }, [handleAbsoluteOrientation, handleRelativeOrientation, isCalibrated]);
+  }, [
+    handleAbsoluteOrientation,
+    handleRelativeOrientation,
+    isCalibrated,
+    handleNoSensors,
+  ]);
 
   // Effect principal
   useEffect(() => {
     isMountedRef.current = true;
 
-    initOrientationSensors();
+    // Atrasa levemente a inicialização para garantir que a
+    // UI esteja pronta e permissões anteriores processadas
+    setTimeout(() => {
+      initOrientationSensors();
+    }, 500);
 
     // Cleanup
     return () => {
