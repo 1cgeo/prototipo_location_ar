@@ -1,0 +1,135 @@
+/* src/index.css */
+/* Estilos globais responsivos */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family: 'Roboto', 'Helvetica', 'Arial', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: #000;
+  color: #fff;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* Impede seleção de texto em dispositivos móveis */
+body {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+
+/* Esconde barras de rolagem */
+::-webkit-scrollbar {
+  display: none;
+}
+
+/* Estilos específicos para AR */
+.ar-overlay {
+  pointer-events: none;
+}
+
+.ar-overlay > * {
+  pointer-events: auto;
+}
+
+/* Animação para marcadores */
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.marker-pulse {
+  animation: pulse 2s infinite;
+}
+
+/* Ajustes para notch e bordas arredondadas */
+.safe-area-padding {
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* Orientação específica */
+/* Modo paisagem */
+@media screen and (orientation: landscape) {
+  .landscape-centered {
+    max-width: 50vw;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .landscape-side {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    max-width: 30vw;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .landscape-left {
+    left: 1rem;
+  }
+
+  .landscape-right {
+    right: 1rem;
+  }
+}
+
+/* Modo retrato */
+@media screen and (orientation: portrait) {
+  .portrait-bottom {
+    position: absolute;
+    bottom: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 90%;
+    max-width: 500px;
+  }
+
+  .portrait-top {
+    position: absolute;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 90%;
+    max-width: 500px;
+  }
+}
+
+/* Ajustes para tablets */
+@media screen and (min-width: 768px) {
+  .tablet-larger-text {
+    font-size: 1.2rem;
+  }
+
+  .tablet-larger-icons {
+    font-size: 1.5rem;
+  }
+}
