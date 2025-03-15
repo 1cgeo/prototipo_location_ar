@@ -20,19 +20,19 @@ interface State {
 class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
     super(props);
-    this.state = { 
-      hasError: false, 
-      error: null, 
-      errorInfo: null 
+    this.state = {
+      hasError: false,
+      error: null,
+      errorInfo: null,
     };
   }
 
   static getDerivedStateFromError(error: Error): State {
     // Atualiza o estado para que a próxima renderização mostre a UI de fallback
-    return { 
-      hasError: true, 
-      error, 
-      errorInfo: null 
+    return {
+      hasError: true,
+      error,
+      errorInfo: null,
     };
   }
 
@@ -43,16 +43,16 @@ class ErrorBoundary extends Component<Props, State> {
   }
 
   resetError = () => {
-    this.setState({ 
-      hasError: false, 
-      error: null, 
-      errorInfo: null 
+    this.setState({
+      hasError: false,
+      error: null,
+      errorInfo: null,
     });
-  }
+  };
 
   reload = () => {
     window.location.reload();
-  }
+  };
 
   render() {
     if (this.state.hasError) {
@@ -89,25 +89,24 @@ class ErrorBoundary extends Component<Props, State> {
             <Typography variant="h5" gutterBottom color="error">
               Ops! Algo deu errado.
             </Typography>
-            
+
             <Typography variant="body1" sx={{ mb: 3 }}>
               A aplicação encontrou um erro. Por favor, tente novamente.
             </Typography>
 
-            <Box sx={{ mb: 3, display: 'flex', gap: 2, justifyContent: 'center' }}>
-              <Button 
-                variant="contained" 
-                color="primary" 
+            <Box
+              sx={{ mb: 3, display: 'flex', gap: 2, justifyContent: 'center' }}
+            >
+              <Button
+                variant="contained"
+                color="primary"
                 startIcon={<RefreshIcon />}
                 onClick={this.reload}
               >
                 Recarregar Aplicativo
               </Button>
-              
-              <Button
-                variant="outlined"
-                onClick={this.resetError}
-              >
+
+              <Button variant="outlined" onClick={this.resetError}>
                 Tentar Novamente
               </Button>
             </Box>
@@ -117,18 +116,18 @@ class ErrorBoundary extends Component<Props, State> {
                 <Typography variant="subtitle2" color="error">
                   Detalhes do Erro (somente desenvolvimento):
                 </Typography>
-                <Box 
-                  component="pre" 
-                  sx={{ 
-                    p: 2, 
-                    bgcolor: 'background.paper', 
-                    border: '1px solid', 
+                <Box
+                  component="pre"
+                  sx={{
+                    p: 2,
+                    bgcolor: 'background.paper',
+                    border: '1px solid',
                     borderColor: 'divider',
                     borderRadius: 1,
                     overflowX: 'auto',
                     fontSize: '0.75rem',
                     lineHeight: 1.5,
-                    mt: 1
+                    mt: 1,
                   }}
                 >
                   {this.state.error.toString()}
