@@ -15,6 +15,7 @@ import LocationOnIcon from '@mui/icons-material/LocationOn';
 import CameraEnhanceIcon from '@mui/icons-material/CameraEnhance';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import BugReportIcon from '@mui/icons-material/BugReport';
+import CompassCalibrationIcon from '@mui/icons-material/CompassCalibration';
 import CloseIcon from '@mui/icons-material/Close';
 
 import { useCamera } from '../hooks/useCamera';
@@ -35,28 +36,29 @@ interface CameraElementProps {
 }
 
 // Separated component for video element rendering
-const CameraElement: React.FC<CameraElementProps> = React.memo(
-  ({ videoRef, isActive }) => {
-    return (
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted // Important for autoplay in some browsers
-        style={{
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          zIndex: 1, // Ensures camera is behind other elements
-          opacity: isActive ? 1 : 0.5, // Reduces opacity when not active
-        }}
-      />
-    );
-  },
-);
+const CameraElement: React.FC<CameraElementProps> = React.memo(({
+  videoRef,
+  isActive,
+}) => {
+  return (
+    <video
+      ref={videoRef}
+      autoPlay
+      playsInline
+      muted // Important for autoplay in some browsers
+      style={{
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        zIndex: 1, // Ensures camera is behind other elements
+        opacity: isActive ? 1 : 0.5, // Reduces opacity when not active
+      }}
+    />
+  );
+});
 
 CameraElement.displayName = 'CameraElement';
 
@@ -73,10 +75,12 @@ const CameraView: React.FC = () => {
   const hasAttemptedInitRef = useRef(false);
   const initStartTimeRef = useRef<number>(Date.now());
   const [showRetryPrompt, setShowRetryPrompt] = useState(false);
-  const errorStateRef = useRef<{ camera: boolean; location: boolean }>({
+  const errorStateRef = useRef<{camera: boolean, location: boolean, heading: boolean}>({
     camera: false,
     location: false,
+    heading: false
   });
+  const wasCameraActiveBeforeDebugRef = useRef<boolean>(false);
 
   // Real state for forcing re-renders
   const [refreshFlag, setRefreshFlag] = useState(0);
@@ -87,6 +91,7 @@ const CameraView: React.FC = () => {
   const {
     startCamera,
     requestCameraPermission,
+    setPreserveStream,
     isActive,
     hasPermission: cameraPermission,
     error: cameraError,
@@ -98,10 +103,12 @@ const CameraView: React.FC = () => {
     error: locationError,
   } = useGeolocation();
 
+  // Use enhanced device orientation hook with new properties
   const {
     heading,
     errorMessage: orientationError,
     isCalibrated,
+    useFallbackHeading
   } = useDeviceOrientation();
 
   const { selectedMarkerId, setVisibleMarkers } = useMarkersStore();
@@ -127,7 +134,7 @@ const CameraView: React.FC = () => {
     console.log('Explicitly starting camera');
     setCameraStarted(true);
     startCamera();
-
+    
     // Reset error state when manually starting camera
     errorStateRef.current.camera = false;
     setErrorMessage(null);
@@ -163,10 +170,38 @@ const CameraView: React.FC = () => {
     setShowRetryPrompt(false);
   }, []);
 
-  // Function to toggle debug mode
+  // Enhanced function to toggle debug mode while preserving camera state
   const toggleDebugMode = useCallback(() => {
-    setDebugMode(prevMode => !prevMode);
-  }, []);
+    // Set flag to preserve camera stream during mode switch
+    setPreserveStream(true);
+    
+    setDebugMode(prevMode => {
+      if (prevMode) {
+        // Exiting debug mode - check if camera needs restarting
+        console.log('Exiting debug mode, camera active:', isActive);
+        if (!isActive && wasCameraActiveBeforeDebugRef.current) {
+          // If camera was active before debug mode but not now, restart it
+          console.log('Restarting camera when exiting debug mode');
+          setTimeout(() => {
+            setPreserveStream(false);
+            startCamera();
+          }, 100);
+        } else {
+          // Reset preserve stream flag with delay
+          setTimeout(() => setPreserveStream(false), 100);
+        }
+        return false;
+      } else {
+        // Entering debug mode - save camera state
+        console.log('Entering debug mode, saving camera state:', isActive);
+        wasCameraActiveBeforeDebugRef.current = isActive;
+        
+        // Reset preserve stream flag with delay
+        setTimeout(() => setPreserveStream(false), 100);
+        return true;
+      }
+    });
+  }, [isActive, startCamera, setPreserveStream]);
 
   // Effect to show retry prompt if initialization takes too long
   useEffect(() => {
@@ -179,7 +214,7 @@ const CameraView: React.FC = () => {
           setShowRetryPrompt(true);
         }
       }, 5000);
-
+      
       return () => clearTimeout(timeoutId);
     }
   }, [isInitializing, showRetryPrompt]);
@@ -194,6 +229,8 @@ const CameraView: React.FC = () => {
       isInitializing,
       isActive,
       cameraStarted,
+      isCalibrated,
+      useFallbackHeading
     });
 
     // Update error state refs for tracking initialization issues
@@ -201,9 +238,18 @@ const CameraView: React.FC = () => {
       errorStateRef.current.camera = true;
       setErrorMessage(cameraError);
     }
-
+    
     if (locationError) {
       errorStateRef.current.location = true;
+    }
+    
+    if (orientationError) {
+      errorStateRef.current.heading = true;
+      
+      // Only set error message if no other error is already being shown
+      if (!errorMessage && !cameraError && !locationError) {
+        setErrorMessage(orientationError);
+      }
     }
 
     // If we have permissions and not in debug mode, start camera automatically
@@ -222,14 +268,17 @@ const CameraView: React.FC = () => {
         // Timeout to continue initialization even if heading isn't available
         if (initTimeoutRef.current === null) {
           initTimeoutRef.current = window.setTimeout(() => {
-            console.log('Initialization timeout reached, continuing');
+            console.log('Initialization timeout reached, continuing anyway');
             setIsInitializing(false);
           }, 3000);
         }
       }
 
+      // Accept either real heading or fallback heading
+      const headingAvailable = heading !== null || useFallbackHeading;
+      
       // If heading is available, or camera is active, we can continue
-      if ((heading !== null || isActive) && isInitializing) {
+      if ((headingAvailable || isActive) && isInitializing) {
         if (initTimeoutRef.current) {
           clearTimeout(initTimeoutRef.current);
           initTimeoutRef.current = null;
@@ -237,15 +286,13 @@ const CameraView: React.FC = () => {
         console.log('Conditions satisfied, continuing');
         setIsInitializing(false);
       }
-
+      
       // If camera is active but initialization hasn't completed within 4 seconds,
       // proceed anyway to avoid getting stuck
       if (isActive && isInitializing) {
         const initTime = Date.now() - initStartTimeRef.current;
         if (initTime > 4000) {
-          console.log(
-            'Camera active but initialization taking too long, proceeding anyway',
-          );
+          console.log('Camera active but initialization taking too long, proceeding anyway');
           setIsInitializing(false);
         }
       }
@@ -267,6 +314,10 @@ const CameraView: React.FC = () => {
     debugMode,
     cameraError,
     locationError,
+    orientationError,
+    errorMessage,
+    isCalibrated,
+    useFallbackHeading
   ]);
 
   // Calculate initialization progress for LoadingState
@@ -274,9 +325,12 @@ const CameraView: React.FC = () => {
     let progress = 0;
     if (cameraPermission === true) progress += 40;
     if (locationPermission === true) progress += 40;
-    if (heading !== null) progress += 20;
+    
+    // Now count heading as complete if we have real or fallback heading
+    if (heading !== null || useFallbackHeading) progress += 20;
+    
     return progress;
-  }, [cameraPermission, locationPermission, heading]);
+  }, [cameraPermission, locationPermission, heading, useFallbackHeading]);
 
   // Function to detect real camera permission
   const detectRealPermission = useCallback(async () => {
@@ -336,7 +390,9 @@ const CameraView: React.FC = () => {
   // Debug mode display
   if (debugMode) {
     // Force re-render to show updated values
-    const debugHeading = `${refreshFlag > 0 ? `[${refreshFlag}] ` : ''}${heading?.toFixed(1) || 'N/A'}°`;
+    // Always show heading value, falling back to "N/A" only if null and not using fallback
+    const headingValue = heading !== null ? heading.toFixed(1) : (useFallbackHeading ? '~0.0' : 'N/A');
+    const debugHeading = `${refreshFlag > 0 ? `[${refreshFlag}] ` : ''}${headingValue}°${useFallbackHeading ? ' (simulado)' : ''}`;
 
     return (
       <ErrorBoundary>
@@ -401,7 +457,7 @@ const CameraView: React.FC = () => {
                   : 'Denied'}
             </Typography>
             <Typography>
-              Orientation: {heading === null ? 'Not available' : 'Available'}
+              Orientation: {heading !== null ? 'Available' : useFallbackHeading ? 'Simulated' : 'Not available'}
             </Typography>
           </Box>
 
@@ -435,6 +491,45 @@ const CameraView: React.FC = () => {
             <Typography variant="subtitle1">Orientation:</Typography>
             <Typography>Heading: {debugHeading}</Typography>
             <Typography>Calibrated: {isCalibrated ? 'Yes' : 'No'}</Typography>
+            <Typography>Fallback Mode: {useFallbackHeading ? 'Yes' : 'No'}</Typography>
+            
+            {/* Debug Compass Indicator */}
+            <Box 
+              sx={{ 
+                mt: 2, 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center' 
+              }}
+            >
+              <Box 
+                sx={{ 
+                  width: 100, 
+                  height: 100, 
+                  borderRadius: '50%', 
+                  border: '2px solid rgba(255,255,255,0.2)',
+                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  mb: 2
+                }}
+              >
+                <Typography sx={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', fontSize: '0.8rem' }}>N</Typography>
+                <Typography sx={{ position: 'absolute', bottom: 0, left: '50%', transform: 'translateX(-50%)', fontSize: '0.8rem' }}>S</Typography>
+                <Typography sx={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', fontSize: '0.8rem' }}>W</Typography>
+                <Typography sx={{ position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)', fontSize: '0.8rem' }}>E</Typography>
+                
+                <CompassCalibrationIcon 
+                  sx={{ 
+                    transform: heading !== null ? `rotate(${heading}deg)` : 'none',
+                    color: 'primary.main',
+                    fontSize: '2rem',
+                    transition: 'transform 0.2s ease-out'
+                  }} 
+                />
+              </Box>
+            </Box>
           </Box>
 
           <Box sx={{ mb: 2 }}>
@@ -498,6 +593,7 @@ const CameraView: React.FC = () => {
               color="primary"
               onClick={forceRequestCamera}
               startIcon={<CameraAltIcon />}
+              disabled={isActive} // Disable if camera is already active
             >
               Request Camera Permission
             </Button>
@@ -516,6 +612,7 @@ const CameraView: React.FC = () => {
               color="success"
               onClick={handleStartCamera}
               startIcon={<CameraEnhanceIcon />}
+              disabled={isActive} // Disable if camera is already active
             >
               Start Camera
             </Button>
@@ -533,7 +630,7 @@ const CameraView: React.FC = () => {
               Continue Without Waiting
             </Button>
 
-            <Button variant="outlined" onClick={() => setDebugMode(false)}>
+            <Button variant="outlined" onClick={() => toggleDebugMode()}>
               Return to Normal Mode
             </Button>
           </Box>
@@ -590,12 +687,12 @@ const CameraView: React.FC = () => {
                 zIndex: 10,
               }}
             >
-              <Alert
+              <Alert 
                 severity="warning"
                 sx={{ mb: 2 }}
                 action={
-                  <IconButton
-                    size="small"
+                  <IconButton 
+                    size="small" 
                     onClick={() => setShowRetryPrompt(false)}
                   >
                     <CloseIcon fontSize="small" />
@@ -626,7 +723,7 @@ const CameraView: React.FC = () => {
               </Alert>
             </Box>
           )}
-
+          
           <Box
             sx={{ position: 'absolute', bottom: 16, display: 'flex', gap: 1 }}
           >
@@ -696,7 +793,7 @@ const CameraView: React.FC = () => {
           <Typography variant="body1" sx={{ mt: 2, mb: 4 }}>
             Starting camera...
           </Typography>
-
+          
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Button
               variant="contained"
@@ -706,7 +803,7 @@ const CameraView: React.FC = () => {
             >
               Retry Camera
             </Button>
-
+            
             <Button
               variant="outlined"
               color="secondary"
@@ -749,7 +846,7 @@ const CameraView: React.FC = () => {
           />
         )}
 
-        {/* Azimuth indicator */}
+        {/* Azimuth indicator - now works with either real or fallback heading */}
         {!selectedMarkerId && (
           <AzimuthIndicator
             heading={heading ?? 0}
@@ -776,6 +873,32 @@ const CameraView: React.FC = () => {
           anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
         />
 
+        {/* Fallback mode indicator if using simulated heading */}
+        {useFallbackHeading && (
+          <Box
+            sx={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 50,
+              backgroundColor: 'rgba(0,0,0,0.6)',
+              color: 'white',
+              padding: '8px 16px',
+              borderRadius: 2,
+              pointerEvents: 'none',
+              maxWidth: '80%',
+              textAlign: 'center',
+              backdropFilter: 'blur(4px)',
+              opacity: 0.7,
+            }}
+          >
+            <Typography variant="caption" sx={{ fontWeight: 'medium' }}>
+              Modo de demonstração - bússola simulada
+            </Typography>
+          </Box>
+        )}
+
         {/* Debug mode button */}
         <Button
           variant="contained"
@@ -792,7 +915,7 @@ const CameraView: React.FC = () => {
         >
           Debug
         </Button>
-
+        
         {/* Additional retry button if camera has error */}
         {errorStateRef.current.camera && (
           <Button

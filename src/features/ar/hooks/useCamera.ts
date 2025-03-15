@@ -1,4 +1,3 @@
-// Path: features\ar\hooks\useCamera.ts
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useCameraStore } from '../stores/cameraStore';
 
@@ -25,6 +24,7 @@ export const useCamera = (
   const initAttemptsRef = useRef(0);
   const videoElementCheckIntervalRef = useRef<number | null>(null);
   const streamAttachmentAttempted = useRef(false);
+  const preserveStreamRef = useRef(true); // New flag to preserve stream during mode switches
 
   // Using useRef for timer variables
   const debounceTimerRef = useRef<number | null>(null);
@@ -36,8 +36,15 @@ export const useCamera = (
    * Safely cleans up a video stream
    */
   const cleanupStream = useCallback((stream?: MediaStream | null) => {
+    // Skip cleanup if preserveStream flag is set
+    if (preserveStreamRef.current) {
+      console.log('Skipping stream cleanup due to preserveStream flag');
+      return;
+    }
+    
     const streamToClean = stream || streamRef.current;
     if (streamToClean) {
+      console.log('Cleaning up camera stream');
       streamToClean.getTracks().forEach(track => {
         try {
           track.stop();
@@ -86,18 +93,18 @@ export const useCamera = (
     // If we don't have a video element yet, schedule a retry
     if (!videoRef.current) {
       console.log('Video element not available, will retry shortly');
-
+      
       // Clear any existing interval
       if (videoElementCheckIntervalRef.current !== null) {
         clearInterval(videoElementCheckIntervalRef.current);
       }
-
+      
       // Set up a more frequent check for the video element
       videoElementCheckIntervalRef.current = window.setInterval(() => {
         if (videoRef.current) {
           console.log('Video element now available, attaching stream...');
           const success = attachExistingStream();
-
+          
           if (success) {
             clearInterval(videoElementCheckIntervalRef.current!);
             videoElementCheckIntervalRef.current = null;
@@ -105,7 +112,7 @@ export const useCamera = (
           }
         }
       }, VIDEO_CHECK_INTERVAL);
-
+      
       return false;
     }
 
@@ -132,6 +139,10 @@ export const useCamera = (
             setTimeout(() => {
               videoRef.current?.play().catch(e2 => {
                 console.error('Second playback attempt failed:', e2);
+                
+                // If second attempt fails, it may be due to browser restrictions
+                // Give user feedback and offer to retry
+                setError('Video playback failed. Click "Retry Camera" to try again.');
               });
             }, 500);
           });
@@ -139,7 +150,7 @@ export const useCamera = (
       };
 
       // Add error handler
-      videoRef.current.onerror = event => {
+      videoRef.current.onerror = (event) => {
         console.error('Video element error:', event);
         // Try to recover by reattaching the stream
         setTimeout(() => attachExistingStream(), 1000);
@@ -148,7 +159,7 @@ export const useCamera = (
       return true;
     } catch (err) {
       console.error('Error attaching stream to video element:', err);
-
+      
       // Try to recover by retrying once after a short delay
       setTimeout(() => {
         console.log('Retrying stream attachment after error...');
@@ -161,10 +172,10 @@ export const useCamera = (
           console.error('Stream attachment retry failed:', retryErr);
         }
       }, 1000);
-
+      
       return false;
     }
-  }, [videoRef, setActive]);
+  }, [videoRef, setActive, setError]);
 
   /**
    * Checks if we already have camera permission
@@ -216,10 +227,10 @@ export const useCamera = (
 
       if (stream) {
         console.log('Permission verified successfully via getUserMedia');
-
+        
         // Instead of discarding this test stream, let's use it!
         streamRef.current = stream;
-
+        
         // Attempt to attach the stream right away
         attachExistingStream();
 
@@ -255,7 +266,10 @@ export const useCamera = (
   const requestCameraPermission = useCallback(async () => {
     // Reset initialization attempts when explicitly requesting permission
     initAttemptsRef.current = 0;
-
+    
+    // Make sure we preserve the stream during this operation
+    preserveStreamRef.current = true;
+    
     // First, check if we already have permission
     const hasExistingPermission = await checkExistingPermission();
 
@@ -336,6 +350,9 @@ export const useCamera = (
       }
 
       permissionCheckedRef.current = true;
+    } finally {
+      // Reset preserve stream flag after operation
+      preserveStreamRef.current = false;
     }
   }, [
     attachExistingStream,
@@ -381,10 +398,8 @@ export const useCamera = (
 
       // If the video element isn't available, set up periodic checks and continue anyway
       if (!videoRef.current) {
-        console.log(
-          'Video element not available, continuing anyway with periodic checks',
-        );
-
+        console.log('Video element not available, continuing anyway with periodic checks');
+        
         if (videoElementCheckIntervalRef.current === null) {
           videoElementCheckIntervalRef.current = window.setInterval(() => {
             if (videoRef.current && streamRef.current) {
@@ -396,7 +411,7 @@ export const useCamera = (
             }
           }, VIDEO_CHECK_INTERVAL);
         }
-
+        
         // IMPORTANT: We continue with initialization even without the video element
         // This is a change from the original code which returned early
       }
@@ -408,8 +423,11 @@ export const useCamera = (
       // Update current orientation
       setLastOrientation(currentOrientation);
 
-      // Clean up previous stream safely
-      cleanupStream();
+      // Clean up previous stream safely IF we don't need to preserve it
+      // (like during debug mode changes)
+      if (!preserveStreamRef.current) {
+        cleanupStream();
+      }
 
       // Determine ideal constraints based on device and orientation
       const constraints: MediaStreamConstraints = {
@@ -438,10 +456,10 @@ export const useCamera = (
 
       // Save the stream reference first
       streamRef.current = stream;
-
+      
       // Try to attach the stream, but don't block on it
       attachExistingStream();
-
+      
       // Update states regardless of attachment success - we got the stream!
       setPermission(true);
       setActive(true);
@@ -459,7 +477,9 @@ export const useCamera = (
       console.error('Error accessing camera:', err);
 
       const errorMessage =
-        err instanceof Error ? err.message : 'Unknown error accessing camera';
+        err instanceof Error
+          ? err.message
+          : 'Unknown error accessing camera';
 
       setError(errorMessage);
 
@@ -473,22 +493,16 @@ export const useCamera = (
 
       // If we haven't exceeded the maximum number of attempts, try again with exponential backoff
       if (initAttemptsRef.current < CAMERA_INIT_RETRY_MAX) {
-        const delay =
-          CAMERA_INIT_RETRY_DELAY_BASE *
-          Math.pow(1.5, initAttemptsRef.current - 1);
-        console.log(
-          `Retrying in ${delay}ms (attempt ${initAttemptsRef.current + 1}/${CAMERA_INIT_RETRY_MAX})...`,
-        );
-
+        const delay = CAMERA_INIT_RETRY_DELAY_BASE * Math.pow(1.5, initAttemptsRef.current - 1);
+        console.log(`Retrying in ${delay}ms (attempt ${initAttemptsRef.current + 1}/${CAMERA_INIT_RETRY_MAX})...`);
+        
         retryTimerRef.current = window.setTimeout(() => {
           console.log(`Starting attempt ${initAttemptsRef.current + 1}`);
           setIsAdjusting(false);
           startCamera();
         }, delay);
       } else {
-        console.error(
-          `Exceeded maximum number of attempts (${CAMERA_INIT_RETRY_MAX})`,
-        );
+        console.error(`Exceeded maximum number of attempts (${CAMERA_INIT_RETRY_MAX})`);
       }
 
       setIsTransitioning(false);
@@ -512,6 +526,13 @@ export const useCamera = (
    * Stops camera streaming and cleans up resources
    */
   const stopCamera = useCallback(() => {
+    // Don't stop if we're preserving the stream (e.g., for debug mode)
+    if (preserveStreamRef.current) {
+      console.log('Skipping camera stop due to preserveStream flag');
+      setActive(false); // Still mark as inactive
+      return;
+    }
+    
     // Clear pending timers
     if (debounceTimerRef.current) {
       window.clearTimeout(debounceTimerRef.current);
@@ -546,9 +567,18 @@ export const useCamera = (
 
     streamRef.current = null;
     setActive(false);
-
+    
     console.log('Camera stopped and resources cleaned up');
   }, [cleanupStream, setActive, videoRef]);
+
+  /**
+   * Set whether to preserve the stream during operations
+   * This is used during mode switches to prevent unnecessary stream start/stop
+   */
+  const setPreserveStream = useCallback((preserve: boolean) => {
+    console.log(`Setting preserveStream to ${preserve}`);
+    preserveStreamRef.current = preserve;
+  }, []);
 
   /**
    * Handles orientation changes with debouncing
@@ -610,6 +640,8 @@ export const useCamera = (
         window.clearInterval(videoElementCheckIntervalRef.current);
       }
 
+      // Don't preserve the stream during component unmount
+      preserveStreamRef.current = false;
       stopCamera();
     };
   }, [handleOrientationChange, stopCamera]);
@@ -641,11 +673,7 @@ export const useCamera = (
   // Try to attach the existing stream when the video element is rendered
   useEffect(() => {
     // If we have a stream but not a video element, set up periodic checks
-    if (
-      streamRef.current &&
-      !videoRef.current &&
-      !videoElementCheckIntervalRef.current
-    ) {
+    if (streamRef.current && !videoRef.current && !videoElementCheckIntervalRef.current) {
       videoElementCheckIntervalRef.current = window.setInterval(() => {
         if (videoRef.current) {
           const success = attachExistingStream();
@@ -669,18 +697,12 @@ export const useCamera = (
   // Extra check for camera status - retry if not active after a delay
   useEffect(() => {
     // If we have permission but camera isn't active after 2 seconds, try again
-    if (
-      hasPermission === true &&
-      !isActive &&
-      streamAttachmentAttempted.current
-    ) {
+    if (hasPermission === true && !isActive && streamAttachmentAttempted.current) {
       const retryTimer = setTimeout(() => {
-        console.log(
-          'Camera not active despite having permission - attempting restart',
-        );
+        console.log('Camera not active despite having permission - attempting restart');
         startCamera();
       }, 2000);
-
+      
       return () => clearTimeout(retryTimer);
     }
   }, [hasPermission, isActive, startCamera]);
@@ -689,6 +711,7 @@ export const useCamera = (
     startCamera,
     stopCamera,
     requestCameraPermission,
+    setPreserveStream,
     isActive,
     hasPermission,
     error,

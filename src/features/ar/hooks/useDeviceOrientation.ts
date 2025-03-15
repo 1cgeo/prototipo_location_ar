@@ -2,83 +2,92 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useLocationStore } from '../stores/locationStore';
 
-// Duração da janela de calibração em ms
+// Duration of calibration window in ms
 const CALIBRATION_WINDOW = 5000;
-// Número mínimo de leituras para considerar calibrado
+// Minimum number of readings to consider calibrated
 const MIN_READINGS_CALIBRATED = 5;
-// Tamanho máximo do histórico de leituras
-const MAX_HISTORY_SIZE = 20; // Aumentado para melhor precisão
-// Intervalo para throttling em ms - REDUZIDO para maior responsividade
-const THROTTLE_INTERVAL = 8; // Aproximadamente 120fps
+// Maximum size of reading history
+const MAX_HISTORY_SIZE = 20;
+// Throttle interval in ms - Reduced for better responsiveness
+const THROTTLE_INTERVAL = 8; // Approximately 120fps
+// Timeout for initial sensor check
+const INITIAL_SENSOR_CHECK_TIMEOUT = 1000;
+// Maximum wait time for sensor initialization
+const MAX_SENSOR_WAIT_TIME = 7000;
 
-// Interface para Safari DeviceOrientationEvent com webkitCompassHeading
+// Interface for Safari DeviceOrientationEvent with webkitCompassHeading
 interface SafariDeviceOrientationEvent extends DeviceOrientationEvent {
   webkitCompassHeading?: number;
 }
 
 /**
- * Hook otimizado para acessar a orientação do dispositivo
- * Com melhor compatibilidade entre dispositivos e tratamento de erros
+ * Enhanced hook for accessing device orientation with improved
+ * compatibility, error handling, and debug mode support
  */
 export const useDeviceOrientation = () => {
   const { heading, setHeading } = useLocationStore();
-  const [permissionState, setPermissionState] =
-    useState<PermissionState | null>(null);
+  const [permissionState, setPermissionState] = useState<PermissionState | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isCalibrated, setIsCalibrated] = useState(false);
+  const [debugHeading, setDebugHeading] = useState<number | null>(null);
+  const [useFallbackHeading, setUseFallbackHeading] = useState(false);
 
-  // Refs para o estado de calibração e estabilidade
+  // Refs for calibration state and stability
   const isMountedRef = useRef(true);
   const readingsCountRef = useRef(0);
   const lastHeadingRef = useRef<number | null>(null);
   const movementDetectedRef = useRef(false);
-  const headingHistoryRef = useRef<
-    Array<{ value: number; timestamp: number; confidence: number }>
-  >([]);
+  const headingHistoryRef = useRef<Array<{ value: number; timestamp: number; confidence: number }>>([]);
   const calibrationTimeoutRef = useRef<number | null>(null);
   const lastProcessTimeRef = useRef(0);
   const consecutiveStableReadingsRef = useRef(0);
   const deviceOrientationRef = useRef<'portrait' | 'landscape' | null>(null);
   const permissionRequestedRef = useRef(false);
-  const eventListenerAddedRef = useRef(false); // NOVO: controla se os listeners foram adicionados
+  const eventListenerAddedRef = useRef(false);
+  const initialHeadingSetRef = useRef(false);
+  const sensorTimedOutRef = useRef(false);
+  const fallbackHeadingRef = useRef(0);
+  const fallbackHeadingModeRef = useRef(false);
+  const initialSensorCheckTimeoutRef = useRef<number | null>(null);
+  const maxWaitTimeoutRef = useRef<number | null>(null);
 
-  // DEBUG: Adiciona contador de eventos recebidos
+  // DEBUG: Add counter for events received
   const eventsReceivedRef = useRef({
     absolute: 0,
     relative: 0,
     motion: 0,
   });
 
-  // DEBUG: função para logar eventos periodicamente
+  // DEBUG: function to log events periodically
   const logEventsStatus = useCallback(() => {
-    console.log(`[DeviceOrientation] Eventos recebidos:`, {
+    console.log(`[DeviceOrientation] Events received:`, {
       absolute: eventsReceivedRef.current.absolute,
       relative: eventsReceivedRef.current.relative,
       motion: eventsReceivedRef.current.motion,
       headingHistorySize: headingHistoryRef.current.length,
       lastHeading: lastHeadingRef.current,
       currentHeading: heading,
+      debugHeading: debugHeading,
       isCalibrated,
+      useFallback: useFallbackHeading,
+      fallbackMode: fallbackHeadingModeRef.current,
     });
-  }, [heading, isCalibrated]);
+  }, [heading, isCalibrated, debugHeading, useFallbackHeading]);
 
-  // Atualiza a orientação do dispositivo para melhor calibração
+  // Update the device orientation for better calibration
   useEffect(() => {
     const updateDeviceOrientation = () => {
-      const newOrientation =
-        window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
+      const newOrientation = window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
       deviceOrientationRef.current = newOrientation;
-      console.log(
-        `[DeviceOrientation] Orientação atualizada: ${newOrientation}`,
-      );
+      console.log(`[DeviceOrientation] Orientation updated: ${newOrientation}`);
     };
 
     updateDeviceOrientation();
     window.addEventListener('resize', updateDeviceOrientation);
     window.addEventListener('orientationchange', updateDeviceOrientation);
 
-    // DEBUG: Configura logging periódico
-    const logInterval = setInterval(logEventsStatus, 3000);
+    // Set up logging interval
+    const logInterval = setInterval(logEventsStatus, 5000);
 
     return () => {
       window.removeEventListener('resize', updateDeviceOrientation);
@@ -87,8 +96,8 @@ export const useDeviceOrientation = () => {
     };
   }, [logEventsStatus]);
 
-  // Função otimizada para detectar se o dispositivo está em movimento
-  // baseado nas mudanças de orientação - agora com detecção de movimento mais sensível
+  // Function to detect if the device is in motion
+  // based on orientation changes - with more sensitive detection
   const detectMovement = useCallback(
     (newHeading: number): boolean => {
       if (lastHeadingRef.current === null) {
@@ -96,31 +105,31 @@ export const useDeviceOrientation = () => {
         return false;
       }
 
-      // Calcula a menor diferença angular (considerando o círculo 0-360)
+      // Calculate smallest angular difference (considering 0-360 circle)
       const alphaDiff = Math.abs(
         ((lastHeadingRef.current - newHeading + 180) % 360) - 180,
       );
 
-      // Atualiza o valor de referência
+      // Update reference value
       lastHeadingRef.current = newHeading;
 
-      // Limiar adaptativo baseado no estado de calibração
-      // MODIFICADO: Mais sensível para detectar movimento
+      // Adaptive threshold based on calibration state
+      // More sensitive to detect movement
       const movementThreshold = isCalibrated ? 0.8 : 0.5;
 
-      // Retorna true se houver movimento significativo
+      // Return true if there's significant movement
       const hasMovement = alphaDiff > movementThreshold;
 
-      // Se detectar movimento, atualiza o ref para uso em outras funções
+      // If movement detected, update ref for use in other functions
       if (hasMovement) {
         movementDetectedRef.current = true;
-        // Reseta o contador de leituras estáveis
+        // Reset stable readings counter
         consecutiveStableReadingsRef.current = 0;
       } else {
-        // Incrementa contador de leituras estáveis
+        // Increment stable readings counter
         consecutiveStableReadingsRef.current++;
 
-        // Após 10 leituras estáveis consecutivas, consideramos que o movimento cessou
+        // After 10 consecutive stable readings, consider movement has stopped
         if (consecutiveStableReadingsRef.current > 10) {
           movementDetectedRef.current = false;
         }
@@ -131,158 +140,182 @@ export const useDeviceOrientation = () => {
     [isCalibrated],
   );
 
-  // Função para calcular o nível de confiança baseado na estabilidade das leituras
+  // Function to calculate confidence level based on reading stability
   const calculateConfidence = useCallback((newHeading: number): number => {
-    if (headingHistoryRef.current.length < 3) return 0.5; // Confiança média por padrão
+    if (headingHistoryRef.current.length < 3) return 0.5; // Medium confidence by default
 
-    // Calcula o desvio padrão das últimas leituras
+    // Calculate standard deviation of recent readings
     const recentHeadings = headingHistoryRef.current
       .slice(-5)
       .map(h => h.value);
 
-    // Ajusta os ângulos para evitar problemas na transição 0/360
+    // Adjust angles to avoid issues with 0/360 transition
     const adjustedHeadings = recentHeadings.map(h => {
       const diff = ((h - newHeading + 180) % 360) - 180;
       return newHeading + diff;
     });
 
-    // Calcula média e desvio padrão
-    const mean =
-      adjustedHeadings.reduce((a, b) => a + b, 0) / adjustedHeadings.length;
-    const variance =
-      adjustedHeadings.reduce((a, b) => a + Math.pow(b - mean, 2), 0) /
+    // Calculate mean and standard deviation
+    const mean = adjustedHeadings.reduce((a, b) => a + b, 0) / adjustedHeadings.length;
+    const variance = adjustedHeadings.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / 
       adjustedHeadings.length;
     const stdDev = Math.sqrt(variance);
 
-    // Confiança inversa ao desvio padrão (mais estável = mais confiança)
-    // Normalizada entre 0.1 e 1.0
+    // Confidence inversely proportional to standard deviation (more stable = more confidence)
+    // Normalized between 0.1 and 1.0
     return Math.max(0.1, Math.min(1.0, 1 - stdDev / 30));
   }, []);
 
-  // Função para processar leituras de orientação com filtro de estabilidade
-  // Implementada com filtro adaptativo e detecção de movimento
+  // Generate a simulated/fallback heading based on time (slowly rotating)
+  const generateFallbackHeading = useCallback((): number => {
+    // Slowly rotate at about 10 degrees per second
+    const now = Date.now();
+    const rotation = (now / 100) % 360;
+    
+    // Store the value for reuse in other functions
+    fallbackHeadingRef.current = rotation;
+    return rotation;
+  }, []);
+
+  // Enhanced function to process orientation readings with stability filter
   const processHeading = useCallback(
-    (newHeading: number) => {
+    (newHeading: number, isSimulated: boolean = false) => {
+      // Don't process if component is unmounted
+      if (!isMountedRef.current) return;
+      
+      // Skip processing if we're in fallback mode and this is a real sensor reading
+      if (fallbackHeadingModeRef.current && !isSimulated) {
+        return;
+      }
+
       const now = Date.now();
 
-      // MODIFICADO: Throttling mais leve para maior responsividade
+      // Throttle processing for performance
       if (now - lastProcessTimeRef.current < THROTTLE_INTERVAL) {
         return;
       }
       lastProcessTimeRef.current = now;
 
-      // Incrementa contador de leituras
+      // Increment reading counter
       readingsCountRef.current++;
 
-      // Verifica movimento para registro de calibração
-      const hasMovement = detectMovement(newHeading);
+      // Check if this is our first ever reading - good sign that sensors are working
+      if (!initialHeadingSetRef.current) {
+        initialHeadingSetRef.current = true;
+        console.log("[DeviceOrientation] Initial heading received:", newHeading);
+        
+        // Clear any timeout for sensor initialization
+        if (initialSensorCheckTimeoutRef.current) {
+          clearTimeout(initialSensorCheckTimeoutRef.current);
+          initialSensorCheckTimeoutRef.current = null;
+        }
+        
+        // Clear any max wait timeout
+        if (maxWaitTimeoutRef.current) {
+          clearTimeout(maxWaitTimeoutRef.current);
+          maxWaitTimeoutRef.current = null;
+        }
+      }
 
-      // Calcula nível de confiança desta leitura
-      const confidence = calculateConfidence(newHeading);
+      // Never mark simulated readings as movement
+      const hasMovement = isSimulated ? false : detectMovement(newHeading);
 
-      // MODIFICADO: Consideramos calibrado mais facilmente
+      // Calculate confidence of this reading
+      const confidence = isSimulated ? 0.3 : calculateConfidence(newHeading);
+
+      // Consider calibrated more easily
       if (
         (hasMovement || movementDetectedRef.current) &&
         !isCalibrated &&
         readingsCountRef.current >= MIN_READINGS_CALIBRATED
       ) {
         setIsCalibrated(true);
-        console.log('[DeviceOrientation] Sensores calibrados!');
+        console.log("[DeviceOrientation] Sensors calibrated!");
         if (calibrationTimeoutRef.current) {
           window.clearTimeout(calibrationTimeoutRef.current);
           calibrationTimeoutRef.current = null;
         }
       }
 
-      // Adiciona na lista de leituras recentes com timestamp e confiança
+      // Add to recent readings list with timestamp and confidence
       headingHistoryRef.current.push({
         value: newHeading,
         timestamp: now,
         confidence,
       });
 
-      // Mantém o histórico limitado
+      // Keep history limited
       if (headingHistoryRef.current.length > MAX_HISTORY_SIZE) {
         headingHistoryRef.current.shift();
       }
 
-      // MODIFICADO: Usa uma abordagem mais simples para calcular o heading filtrado
-      // com menos filtragem para dispositivos em movimento
+      // Calculate filtered heading based on recent history
+      // Simplified approach to reduce computation
       let filteredHeading = newHeading;
-
+      
       if (headingHistoryRef.current.length >= 3) {
         if (movementDetectedRef.current) {
-          // Durante movimento, damos mais peso às leituras recentes
-          // usando apenas as últimas 3 leituras com pesos 0.5, 0.3, 0.2
+          // During movement, prioritize recent readings
+          // Using only last 3 readings with weights 0.5, 0.3, 0.2
           const weights = [0.5, 0.3, 0.2];
           const recentValues = headingHistoryRef.current.slice(-3).map(item => {
-            // Ajuste para o problema do ângulo (0/360)
+            // Adjust for angle wrap (0/360)
             const diff = ((item.value - newHeading + 180) % 360) - 180;
             return newHeading + diff;
           });
-
+          
           filteredHeading = recentValues.reduce((sum, value, index) => {
             return sum + value * weights[index];
           }, 0);
         } else {
-          // Sem movimento, usamos média mais estável
+          // Without movement, use more stable average
           const allValues = headingHistoryRef.current.map(item => {
             const diff = ((item.value - newHeading + 180) % 360) - 180;
             return newHeading + diff;
           });
-
-          filteredHeading =
-            allValues.reduce((a, b) => a + b, 0) / allValues.length;
+          
+          filteredHeading = allValues.reduce((a, b) => a + b, 0) / allValues.length;
         }
-
-        // Normaliza para 0-360
+        
+        // Normalize to 0-360
         filteredHeading = ((filteredHeading % 360) + 360) % 360;
       }
 
-      // DEBUG: Log para verificar o heading antes de atualizar o store
-      if (filteredHeading !== heading && readingsCountRef.current % 10 === 0) {
-        console.log(
-          `[DeviceOrientation] Atualizando heading: ${filteredHeading.toFixed(1)}° (raw: ${newHeading.toFixed(1)}°)`,
-        );
+      // Log updates every 10 readings or when value changes significantly
+      if (readingsCountRef.current % 10 === 0 || Math.abs((filteredHeading - (heading || 0))) > 5) {
+        console.log(`[DeviceOrientation] Updating heading: ${filteredHeading.toFixed(1)}° (raw: ${newHeading.toFixed(1)}°, simulated: ${isSimulated})`);
       }
 
-      // CRÍTICO: Garante que o heading seja atualizado mesmo sem calibração completa
-      // após um certo número de leituras
-      if (
-        readingsCountRef.current > MIN_READINGS_CALIBRATED * 2 ||
-        isCalibrated
-      ) {
-        // Atualiza o heading no store com valor filtrado
+      // For debug mode, we store the value locally too
+      setDebugHeading(filteredHeading);
+
+      // Always update heading after minimum readings or when calibrated
+      if (readingsCountRef.current > MIN_READINGS_CALIBRATED * 2 || isCalibrated) {
+        // Update the heading in the store with filtered value
         setHeading(filteredHeading);
       }
     },
-    [detectMovement, isCalibrated, setHeading, calculateConfidence, heading],
+    [detectMovement, isCalibrated, setHeading, calculateConfidence, heading, generateFallbackHeading],
   );
 
-  // Função para processar orientação absoluta (mais precisa)
+  // Process absolute orientation events (more accurate)
   const handleAbsoluteOrientation = useCallback(
     (event: DeviceOrientationEvent) => {
       if (!isMountedRef.current) return;
-
-      // DEBUG: Incrementa contador de eventos
+      
+      // Increment event counter
       eventsReceivedRef.current.absolute++;
-
-      // MODIFICADO: Aceita qualquer valor, não apenas event.alpha
-      // Alguns navegadores/dispositivos podem fornecer o valor em diferentes propriedades
+      
+      // Accept any value from different browser implementations
       let alphaValue = null;
-
+      
       if (event.alpha !== null && event.alpha !== undefined) {
         alphaValue = event.alpha;
-      } else if (
-        (event as SafariDeviceOrientationEvent).webkitCompassHeading !==
-        undefined
-      ) {
-        // Safari em iOS fornece webkitCompassHeading
-        alphaValue =
-          360 -
-          ((event as SafariDeviceOrientationEvent).webkitCompassHeading || 0);
+      } else if ((event as SafariDeviceOrientationEvent).webkitCompassHeading !== undefined) {
+        // Safari on iOS provides webkitCompassHeading
+        alphaValue = 360 - ((event as SafariDeviceOrientationEvent).webkitCompassHeading || 0);
       }
-
+      
       if (alphaValue !== null) {
         processHeading(alphaValue);
       }
@@ -290,109 +323,115 @@ export const useDeviceOrientation = () => {
     [processHeading],
   );
 
-  // Função aprimorada para processar orientação relativa (menos precisa)
-  // Com correções para diferentes orientações de dispositivo
+  // Improved handler for relative orientation with device position adjustments
   const handleRelativeOrientation = useCallback(
     (event: DeviceOrientationEvent) => {
       if (!isMountedRef.current) return;
-
-      // DEBUG: Incrementa contador de eventos
+      
+      // Increment event counter
       eventsReceivedRef.current.relative++;
-
-      // MODIFICADO: Verificações mais robustas para diferentes implementações
+      
+      // Handle different browser implementations
       let alphaValue = null;
-
+      
       if (event.alpha !== null && event.alpha !== undefined) {
         alphaValue = event.alpha;
-      } else if (
-        (event as SafariDeviceOrientationEvent).webkitCompassHeading !==
-        undefined
-      ) {
-        // Safari em iOS fornece webkitCompassHeading
-        alphaValue =
-          360 -
-          ((event as SafariDeviceOrientationEvent).webkitCompassHeading || 0);
+      } else if ((event as SafariDeviceOrientationEvent).webkitCompassHeading !== undefined) {
+        // Safari on iOS provides webkitCompassHeading
+        alphaValue = 360 - ((event as SafariDeviceOrientationEvent).webkitCompassHeading || 0);
       }
-
+      
       if (alphaValue === null) {
         return;
       }
 
       let heading = alphaValue;
-      const beta = event.beta; // inclinação frente/trás (-180 a 180)
-      const gamma = event.gamma; // inclinação lateral (-90 a 90)
+      const beta = event.beta; // front/back tilt (-180 to 180)
+      const gamma = event.gamma; // left/right tilt (-90 to 90)
 
       try {
         if (beta !== null && gamma !== null) {
-          // Ajustes mais precisos para diferentes orientações do dispositivo
+          // More precise adjustments for different device orientations
           const currentOrientation = deviceOrientationRef.current;
 
-          // MODIFICADO: Ajustes simplificados e robustos para orientação
+          // Simplified and robust orientation adjustments
           if (currentOrientation === 'portrait') {
-            // Modo retrato
-            // Verifica se o dispositivo está de cabeça para baixo
+            // Portrait mode
+            // Check if device is upside down
             const isUpsideDown = beta < 0;
 
             if (isUpsideDown) {
               heading = (heading + 180) % 360;
             }
           } else if (currentOrientation === 'landscape') {
-            // Modo paisagem
+            // Landscape mode
             const isRightSide = gamma > 0;
-
-            // Ajuste para paisagem
+            
+            // Landscape adjustment
             heading = (heading + (isRightSide ? 90 : -90)) % 360;
           }
         }
       } catch (err) {
-        console.warn('Erro ao ajustar orientação:', err);
+        console.warn('Error adjusting orientation:', err);
       }
 
-      // Normaliza para 0-360
+      // Normalize to 0-360
       heading = ((heading % 360) + 360) % 360;
 
-      // Processa o heading ajustado
+      // Process the adjusted heading
       processHeading(heading);
     },
     [processHeading],
   );
 
-  // Adicionar suporte para DeviceMotion como fallback
+  // Added support for DeviceMotion as a fallback
   const handleDeviceMotion = useCallback((event: DeviceMotionEvent) => {
     if (!isMountedRef.current) return;
-
-    // DEBUG: Incrementa contador de eventos
+    
+    // Increment event counter
     eventsReceivedRef.current.motion++;
-
-    // Usamos como um indicador de movimento, não necessariamente para obter o heading
+    
+    // Use as movement indicator, not for heading
     if (event.accelerationIncludingGravity) {
-      // Apenas marca que houve movimento para ajudar na calibração
+      // Mark movement to help with calibration
       movementDetectedRef.current = true;
     }
   }, []);
 
-  // Função para lidar com dispositivos que não têm sensores de orientação
+  // Function to handle when device has no orientation sensors
   const handleNoSensors = useCallback(() => {
-    console.log(
-      'Dispositivo sem sensores de orientação ou permissão negada - usando modo de fallback',
-    );
+    console.log('Device without orientation sensors or permission denied - using fallback mode');
 
-    // Fallback: usar um valor de heading fixo ou simulado
-    // Isso permite que o app continue funcionando mesmo sem sensores
-    const simulatedHeading = 0; // Norte como direção padrão
-    setHeading(simulatedHeading);
-    setIsCalibrated(true); // Consideramos "calibrado" para continuar o fluxo do app
+    // Set error message but allow app to continue
+    setErrorMessage("Compass não disponível - usando rotação simulada");
+    
+    // Enable fallback mode
+    setUseFallbackHeading(true);
+    fallbackHeadingModeRef.current = true;
+    
+    // Mark as "calibrated" to allow app flow to continue
+    setIsCalibrated(true);
+    
+    // Set up periodic fallback heading updates
+    const fallbackInterval = setInterval(() => {
+      if (isMountedRef.current) {
+        const simulatedHeading = generateFallbackHeading();
+        processHeading(simulatedHeading, true);
+      } else {
+        clearInterval(fallbackInterval);
+      }
+    }, 100);
+    
+    // Clean up on unmount
+    return () => clearInterval(fallbackInterval);
+  }, [generateFallbackHeading, processHeading]);
 
-    // Limpa qualquer mensagem de erro para permitir que o app continue
-    setErrorMessage(null);
-  }, [setHeading]);
-
-  // Função para testar explicitamente se temos acesso aos sensores
+  // Function to test if we have access to sensors
   const testSensorAccess = useCallback(async () => {
-    return new Promise<boolean>(resolve => {
+    return new Promise<boolean>((resolve) => {
       let hasReceivedEvent = false;
       let testTimer: number | null = null;
-
+      
       const testHandler = () => {
         hasReceivedEvent = true;
         if (testTimer) {
@@ -402,13 +441,11 @@ export const useDeviceOrientation = () => {
         window.removeEventListener('deviceorientationabsolute', testHandler);
         resolve(true);
       };
-
+      
       window.addEventListener('deviceorientation', testHandler, { once: true });
-      window.addEventListener('deviceorientationabsolute', testHandler, {
-        once: true,
-      });
-
-      // Timeout de 500ms para verificar se recebemos algum evento
+      window.addEventListener('deviceorientationabsolute', testHandler, { once: true });
+      
+      // 500ms timeout to check if we received any events
       testTimer = window.setTimeout(() => {
         window.removeEventListener('deviceorientation', testHandler);
         window.removeEventListener('deviceorientationabsolute', testHandler);
@@ -417,72 +454,60 @@ export const useDeviceOrientation = () => {
     });
   }, []);
 
-  // NOVA função para adicionar os eventos de orientação
+  // Enhanced function to add orientation event listeners
   const addOrientationListeners = useCallback(() => {
     if (eventListenerAddedRef.current) {
-      console.log('[DeviceOrientation] Listeners já adicionados, ignorando.');
+      console.log('[DeviceOrientation] Listeners already added, skipping.');
       return;
     }
-
-    console.log('[DeviceOrientation] Adicionando event listeners...');
-
-    // Tenta primeiro o evento absoluto (mais preciso)
-    window.addEventListener(
-      'deviceorientationabsolute',
-      handleAbsoluteOrientation,
-      { passive: true },
-    );
-
-    // Adiciona também o evento relativo como fallback
-    window.addEventListener('deviceorientation', handleRelativeOrientation, {
-      passive: true,
-    });
-
-    // Adiciona motion para ajudar na detecção de movimento
-    window.addEventListener('devicemotion', handleDeviceMotion, {
-      passive: true,
-    });
-
+    
+    console.log('[DeviceOrientation] Adding event listeners...');
+    
+    // First try absolute orientation (more precise)
+    window.addEventListener('deviceorientationabsolute', handleAbsoluteOrientation, { passive: true });
+    
+    // Also add relative orientation as fallback
+    window.addEventListener('deviceorientation', handleRelativeOrientation, { passive: true });
+    
+    // Add motion for movement detection
+    window.addEventListener('devicemotion', handleDeviceMotion, { passive: true });
+    
     eventListenerAddedRef.current = true;
-    console.log('[DeviceOrientation] Todos os listeners adicionados.');
-  }, [
-    handleAbsoluteOrientation,
-    handleRelativeOrientation,
-    handleDeviceMotion,
-  ]);
+    console.log('[DeviceOrientation] All listeners added.');
+  }, [handleAbsoluteOrientation, handleRelativeOrientation, handleDeviceMotion]);
 
-  // Função principal para inicializar os sensores
+  // Main function to initialize orientation sensors
   const initOrientationSensors = useCallback(async () => {
-    // Evita múltiplas solicitações de permissão
+    // Avoid multiple permission requests
     if (permissionRequestedRef.current) return;
     permissionRequestedRef.current = true;
 
     try {
-      // Reset do estado antes de inicializar
+      // Reset state before initializing
       setIsCalibrated(false);
+      setUseFallbackHeading(false);
+      fallbackHeadingModeRef.current = false;
       readingsCountRef.current = 0;
       headingHistoryRef.current = [];
       lastHeadingRef.current = null;
       consecutiveStableReadingsRef.current = 0;
       movementDetectedRef.current = false;
+      initialHeadingSetRef.current = false;
+      sensorTimedOutRef.current = false;
 
-      console.log(
-        '[DeviceOrientation] Inicializando sensores de orientação...',
-      );
+      console.log('[DeviceOrientation] Initializing orientation sensors...');
 
-      // Verificação de suporte aos sensores
+      // Check if device supports orientation events
       const hasDeviceOrientation = 'DeviceOrientationEvent' in window;
 
       if (!hasDeviceOrientation) {
-        console.warn(
-          '[DeviceOrientation] Dispositivo não suporta orientação - usando fallback',
-        );
+        console.warn('[DeviceOrientation] Device does not support orientation - using fallback');
         handleNoSensors();
         return;
       }
 
-      // Configura timeout para verificar calibração
-      // Usa um tempo maior para dar chance ao usuário de mover o dispositivo
+      // Set up calibration timeout
+      // Using longer time to give user chance to move the device
       calibrationTimeoutRef.current = window.setTimeout(() => {
         if (
           !isCalibrated &&
@@ -492,62 +517,73 @@ export const useDeviceOrientation = () => {
           const now = Date.now();
           const oldestReading = headingHistoryRef.current[0].timestamp;
 
-          // Se já se passou tempo suficiente e ainda não está calibrado
+          // If enough time passed and still not calibrated
           if (now - oldestReading >= CALIBRATION_WINDOW) {
-            console.log(
-              '[DeviceOrientation] Tempo de calibração excedido, continuando assim mesmo.',
-            );
-            setIsCalibrated(true); // MODIFICADO: Força calibração de qualquer modo
+            console.log('[DeviceOrientation] Calibration time exceeded, continuing anyway.');
+            setIsCalibrated(true); // Force calibration to continue app flow
           }
         }
       }, CALIBRATION_WINDOW);
 
+      // Set up initial sensor check timeout
+      initialSensorCheckTimeoutRef.current = window.setTimeout(() => {
+        // If we haven't received any readings by now, sensors might be disabled
+        if (!initialHeadingSetRef.current) {
+          console.warn('[DeviceOrientation] No sensor readings received after timeout');
+          
+          // Don't switch to fallback yet, give more time
+          console.log('[DeviceOrientation] Waiting longer before using fallback...');
+        }
+      }, INITIAL_SENSOR_CHECK_TIMEOUT);
+      
+      // Set maximum wait time before falling back
+      maxWaitTimeoutRef.current = window.setTimeout(() => {
+        // If we still don't have readings after max wait, use fallback
+        if (!initialHeadingSetRef.current || headingHistoryRef.current.length < 3) {
+          console.warn('[DeviceOrientation] Max wait time exceeded, switching to fallback mode');
+          sensorTimedOutRef.current = true;
+          handleNoSensors();
+        }
+      }, MAX_SENSOR_WAIT_TIME);
+
       let permissionGranted = true;
 
-      // MODIFICADO: Tratamento específico para iOS
+      // Special handling for iOS
       if (
         typeof DeviceOrientationEvent !== 'undefined' &&
         typeof (DeviceOrientationEvent as any).requestPermission === 'function'
       ) {
         try {
           console.log(
-            '[DeviceOrientation] Solicitando permissão para orientação do dispositivo (iOS)',
+            '[DeviceOrientation] Requesting device orientation permission (iOS)',
           );
-
-          // Em iOS, devemos solicitar permissão explicitamente
+          
+          // On iOS, we must explicitly request permission
           const permission = await (
             DeviceOrientationEvent as any
           ).requestPermission();
-
+          
           setPermissionState(permission);
 
           if (permission !== 'granted') {
-            console.warn(
-              '[DeviceOrientation] Permissão para sensores negada:',
-              permission,
-            );
+            console.warn('[DeviceOrientation] Sensor permission denied:', permission);
             permissionGranted = false;
             handleNoSensors();
             return;
           }
-
-          console.log('[DeviceOrientation] Permissão concedida no iOS');
+          
+          console.log('[DeviceOrientation] Permission granted on iOS');
         } catch (err) {
-          console.error(
-            '[DeviceOrientation] Erro ao solicitar permissão para sensores:',
-            err,
-          );
-
-          // MODIFICADO: Tenta adicionar os listeners mesmo com erro de permissão
-          // Em alguns casos, o erro pode ser apenas porque já temos permissão
-          console.log(
-            '[DeviceOrientation] Tentando adicionar listeners mesmo assim...',
-          );
+          console.error('[DeviceOrientation] Error requesting sensor permission:', err);
+          
+          // Try adding listeners anyway
+          // Sometimes error occurs because we already have permission
+          console.log('[DeviceOrientation] Trying to add listeners anyway...');
           addOrientationListeners();
-
-          // Testa se estamos recebendo eventos mesmo com o erro
+          
+          // Test if we're receiving events despite the error
           const hasAccess = await testSensorAccess();
-
+          
           if (!hasAccess) {
             permissionGranted = false;
             handleNoSensors();
@@ -557,80 +593,60 @@ export const useDeviceOrientation = () => {
       }
 
       if (permissionGranted) {
-        // MODIFICADO: Usamos a função dedicada para adicionar listeners
+        // Use dedicated function to add listeners
         addOrientationListeners();
 
-        // Tenta também DeviceMotion para iOS
+        // Also try DeviceMotion for iOS
         try {
           if (
             'DeviceMotionEvent' in window &&
             typeof (DeviceMotionEvent as any).requestPermission === 'function'
           ) {
             await (DeviceMotionEvent as any).requestPermission();
-            // DeviceMotion já é adicionado em addOrientationListeners
+            // DeviceMotion already added in addOrientationListeners
           }
         } catch (err) {
-          // Ignora erros do DeviceMotion, pois não é essencial
-          console.warn('[DeviceOrientation] DeviceMotion não disponível:', err);
+          // Ignore DeviceMotion errors as it's not essential
+          console.warn('[DeviceOrientation] DeviceMotion not available:', err);
         }
       }
-
-      // NOVO: Verifica se os eventos estão chegando
+      
+      // Check if events are arriving after 1 second
       setTimeout(async () => {
         const eventCounts = eventsReceivedRef.current;
-
+        
         if (eventCounts.absolute === 0 && eventCounts.relative === 0) {
-          console.warn(
-            '[DeviceOrientation] Nenhum evento recebido após inicialização!',
-          );
-
-          // Tenta novamente com uma abordagem alternativa
-          window.removeEventListener(
-            'deviceorientationabsolute',
-            handleAbsoluteOrientation,
-          );
-          window.removeEventListener(
-            'deviceorientation',
-            handleRelativeOrientation,
-          );
-
-          console.log(
-            "[DeviceOrientation] Tentando adicionar com eventos 'on' diretamente...",
-          );
-
-          // Tenta adicionar com 'on' eventos, que podem funcionar em alguns navegadores
+          console.warn('[DeviceOrientation] No events received after initialization!');
+          
+          // Try alternative approach
+          window.removeEventListener('deviceorientationabsolute', handleAbsoluteOrientation);
+          window.removeEventListener('deviceorientation', handleRelativeOrientation);
+          
+          console.log('[DeviceOrientation] Trying direct \'on\' events...');
+          
+          // Try adding with 'on' events which might work in some browsers
           if ('ondeviceorientationabsolute' in window) {
-            console.log(
-              '[DeviceOrientation] Usando ondeviceorientationabsolute',
-            );
-            (window as any).ondeviceorientationabsolute =
-              handleAbsoluteOrientation;
+            console.log('[DeviceOrientation] Using ondeviceorientationabsolute');
+            (window as any).ondeviceorientationabsolute = handleAbsoluteOrientation;
           }
-
+          
           if ('ondeviceorientation' in window) {
-            console.log('[DeviceOrientation] Usando ondeviceorientation');
+            console.log('[DeviceOrientation] Using ondeviceorientation');
             (window as any).ondeviceorientation = handleRelativeOrientation;
           }
-
-          // Se ainda não temos eventos após mais 1 segundo, usamos o fallback
+          
+          // If still no events after another second, use fallback
           setTimeout(() => {
-            if (
-              eventsReceivedRef.current.absolute === 0 &&
-              eventsReceivedRef.current.relative === 0
-            ) {
-              console.error(
-                '[DeviceOrientation] Sensores não estão respondendo!',
-              );
+            if (eventsReceivedRef.current.absolute === 0 && 
+                eventsReceivedRef.current.relative === 0) {
+              console.error('[DeviceOrientation] Sensors not responding!');
               handleNoSensors();
             }
           }, 1000);
         }
       }, 1000);
     } catch (error) {
-      console.error(
-        '[DeviceOrientation] Erro ao inicializar sensores de orientação:',
-        error,
-      );
+      console.error('[DeviceOrientation] Error initializing orientation sensors:', error);
       handleNoSensors();
     }
   }, [
@@ -643,25 +659,32 @@ export const useDeviceOrientation = () => {
     testSensorAccess,
   ]);
 
-  // Effect principal
+  // Main effect to set up orientation tracking
   useEffect(() => {
     isMountedRef.current = true;
 
-    // Atrasa levemente a inicialização para garantir que a
-    // UI esteja pronta e permissões anteriores processadas
+    // Slight delay for initialization to ensure UI is ready
     setTimeout(() => {
       initOrientationSensors();
     }, 500);
 
-    // Cleanup
+    // Cleanup function
     return () => {
       isMountedRef.current = false;
 
       if (calibrationTimeoutRef.current) {
         window.clearTimeout(calibrationTimeoutRef.current);
       }
+      
+      if (initialSensorCheckTimeoutRef.current) {
+        window.clearTimeout(initialSensorCheckTimeoutRef.current);
+      }
+      
+      if (maxWaitTimeoutRef.current) {
+        window.clearTimeout(maxWaitTimeoutRef.current);
+      }
 
-      // MODIFICADO: Limpeza mais robusta
+      // More robust cleanup of all event listeners
       window.removeEventListener(
         'deviceorientationabsolute',
         handleAbsoluteOrientation,
@@ -670,19 +693,20 @@ export const useDeviceOrientation = () => {
         'deviceorientation',
         handleRelativeOrientation,
       );
-      window.removeEventListener('devicemotion', handleDeviceMotion);
-
-      // Limpa também os eventos 'on'
+      window.removeEventListener(
+        'devicemotion',
+        handleDeviceMotion,
+      );
+      
+      // Clean up 'on' events too
       if ('ondeviceorientationabsolute' in window) {
         (window as any).ondeviceorientationabsolute = null;
       }
       if ('ondeviceorientation' in window) {
         (window as any).ondeviceorientation = null;
       }
-
-      console.log(
-        '[DeviceOrientation] Hook limpo e event listeners removidos.',
-      );
+      
+      console.log('[DeviceOrientation] Hook cleaned up and event listeners removed.');
     };
   }, [
     handleAbsoluteOrientation,
@@ -691,5 +715,15 @@ export const useDeviceOrientation = () => {
     initOrientationSensors,
   ]);
 
-  return { heading, permissionState, errorMessage, isCalibrated };
+  // Return the debug heading if we're in debug mode
+  const effectiveHeading = useFallbackHeading ? 
+    fallbackHeadingRef.current : (debugHeading !== null ? debugHeading : heading);
+
+  return { 
+    heading: effectiveHeading, 
+    permissionState, 
+    errorMessage, 
+    isCalibrated,
+    useFallbackHeading
+  };
 };
