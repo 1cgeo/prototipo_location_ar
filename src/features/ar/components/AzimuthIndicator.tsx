@@ -1,8 +1,8 @@
 // Path: features\ar\components\AzimuthIndicator.tsx
 import React from 'react';
-import { Box, Typography, useTheme, Tooltip, alpha } from '@mui/material';
+import { Box, Typography, useTheme, alpha } from '@mui/material';
 import NavigationIcon from '@mui/icons-material/Navigation';
-import { azimuthToCardinal } from '../utils/formatters';
+import { azimuthToCardinal } from '../utils/arUtils';
 
 interface AzimuthIndicatorProps {
   heading: number | null;
@@ -10,16 +10,8 @@ interface AzimuthIndicatorProps {
   isCalibrated?: boolean;
 }
 
-// Cardinal points definition
-const CARDINAL_POINTS = [
-  { short: 'N', long: 'Norte', angle: 0 },
-  { short: 'E', long: 'Leste', angle: 90 },
-  { short: 'S', long: 'Sul', angle: 180 },
-  { short: 'W', long: 'Oeste', angle: 270 },
-];
-
 /**
- * Compass indicator showing current device heading
+ * Simplified compass indicator showing current device heading
  */
 const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
   ({ heading, isLandscape, isCalibrated = true }) => {
@@ -31,11 +23,6 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
     // Round heading for display
     const roundedHeading = Math.round(heading);
     const cardinalDirection = azimuthToCardinal(heading);
-
-    // Size calculations
-    const viewportMin = Math.min(window.innerWidth, window.innerHeight);
-    const baseSize = Math.max(50, Math.min(70, viewportMin * 0.08));
-    const fontSize = baseSize * 0.16;
 
     return (
       <Box
@@ -67,107 +54,76 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
             boxShadow: 2,
           }}
         >
-          <Typography
-            variant="caption"
-            sx={{
-              mb: 0.5,
-              opacity: 0.8,
-              fontSize: `${fontSize}px`,
-            }}
-          >
+          <Typography variant="caption" sx={{ mb: 0.5, opacity: 0.8 }}>
             {isCalibrated ? 'Direction' : 'Calibrating...'}
           </Typography>
 
           <Box
             sx={{
               position: 'relative',
-              height: `${baseSize}px`,
-              width: `${baseSize}px`,
+              height: 60,
+              width: 60,
+              borderRadius: '50%',
+              border: '2px solid rgba(255,255,255,0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
-            {/* Circle background */}
+            {/* Cardinal points */}
+            {['N', 'E', 'S', 'W'].map((point, index) => {
+              const angle = index * 90;
+              const isHighlighted = cardinalDirection.includes(point);
+
+              return (
+                <Typography
+                  key={point}
+                  variant="caption"
+                  sx={{
+                    position: 'absolute',
+                    top: angle === 0 ? 0 : 'auto',
+                    bottom: angle === 180 ? 0 : 'auto',
+                    left:
+                      angle === 270
+                        ? 0
+                        : angle === 0 || angle === 180
+                          ? '50%'
+                          : 'auto',
+                    right: angle === 90 ? 0 : 'auto',
+                    transform:
+                      angle === 0 || angle === 180
+                        ? 'translateX(-50%)'
+                        : angle === 90 || angle === 270
+                          ? 'translateY(-50%)'
+                          : 'none',
+                    fontWeight: isHighlighted ? 'bold' : 'normal',
+                    color: isHighlighted ? theme.palette.primary.main : 'white',
+                  }}
+                >
+                  {point}
+                </Typography>
+              );
+            })}
+
+            {/* Direction indicator */}
             <Box
               sx={{
                 position: 'absolute',
-                top: 0,
-                left: 0,
-                height: '100%',
-                width: '100%',
-                borderRadius: '50%',
-                border: '2px solid rgba(255,255,255,0.2)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                top: '50%',
+                left: '50%',
+                transform: `translate(-50%, -50%) rotate(${roundedHeading}deg)`,
+                transition: isCalibrated
+                  ? 'transform 0.1s ease-out'
+                  : 'transform 0.5s ease-out',
               }}
             >
-              {/* Cardinal points */}
-              {CARDINAL_POINTS.map(point => {
-                const isHighlighted = cardinalDirection.includes(point.short);
-
-                // Position based on angle
-                const position = {
-                  top: point.angle === 0 ? 0 : 'auto',
-                  bottom: point.angle === 180 ? 0 : 'auto',
-                  left:
-                    point.angle === 270
-                      ? 0
-                      : point.angle === 0 || point.angle === 180
-                        ? '50%'
-                        : 'auto',
-                  right: point.angle === 90 ? 0 : 'auto',
-                  transform:
-                    point.angle === 0 || point.angle === 180
-                      ? 'translateX(-50%)'
-                      : point.angle === 90 || point.angle === 270
-                        ? 'translateY(-50%)'
-                        : 'none',
-                };
-
-                return (
-                  <Tooltip
-                    key={point.short}
-                    title={point.long}
-                    arrow
-                    placement="top"
-                  >
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        position: 'absolute',
-                        ...position,
-                        fontSize: `${fontSize}px`,
-                        fontWeight: isHighlighted ? 'bold' : 'normal',
-                        color: isHighlighted
-                          ? theme.palette.primary.main
-                          : 'white',
-                      }}
-                    >
-                      {point.short}
-                    </Typography>
-                  </Tooltip>
-                );
-              })}
-
-              {/* Direction indicator */}
-              <Box
+              <NavigationIcon
+                color="primary"
                 sx={{
-                  position: 'absolute',
-                  top: '50%',
-                  left: '50%',
-                  transform: `translate(-50%, -50%) rotate(${roundedHeading}deg)`,
-                  transition: isCalibrated
-                    ? 'transform 0.1s ease-out'
-                    : 'transform 0.5s ease-out',
+                  fontSize: 24,
+                  opacity: isCalibrated ? 1 : 0.7,
                 }}
-              >
-                <NavigationIcon
-                  color="primary"
-                  sx={{
-                    fontSize: baseSize * 0.47,
-                    opacity: isCalibrated ? 1 : 0.7,
-                  }}
-                />
-              </Box>
+              />
             </Box>
           </Box>
 
@@ -178,7 +134,6 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
               mt: 0.5,
               fontWeight: 'medium',
               fontFamily: 'monospace',
-              fontSize: `${fontSize * 1.3}px`,
             }}
           >
             {roundedHeading}° {cardinalDirection}

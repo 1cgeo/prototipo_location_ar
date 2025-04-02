@@ -5,17 +5,15 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 
 interface Props {
   children: ReactNode;
-  fallback?: ReactNode;
 }
 
 interface State {
   hasError: boolean;
   error: Error | null;
-  errorInfo: ErrorInfo | null;
 }
 
 /**
- * Error boundary component to gracefully handle runtime errors
+ * Simplified error boundary component
  */
 class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
@@ -23,7 +21,6 @@ class ErrorBoundary extends Component<Props, State> {
     this.state = {
       hasError: false,
       error: null,
-      errorInfo: null,
     };
   }
 
@@ -31,23 +28,12 @@ class ErrorBoundary extends Component<Props, State> {
     return {
       hasError: true,
       error,
-      errorInfo: null,
     };
   }
 
-  componentDidCatch(_error: Error, errorInfo: ErrorInfo): void {
-    // Log error to console and update state
-    console.error('Error caught by ErrorBoundary:', _error);
-    this.setState({ errorInfo });
+  componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
+    console.error('Error caught by ErrorBoundary:', error, errorInfo);
   }
-
-  resetError = () => {
-    this.setState({
-      hasError: false,
-      error: null,
-      errorInfo: null,
-    });
-  };
 
   reload = () => {
     window.location.reload();
@@ -55,12 +41,6 @@ class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
-      // Use custom fallback if provided
-      if (this.props.fallback) {
-        return this.props.fallback;
-      }
-
-      // Default error UI
       return (
         <Box
           sx={{
@@ -91,45 +71,14 @@ class ErrorBoundary extends Component<Props, State> {
               The application encountered an error. Please try again.
             </Typography>
 
-            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
-              <Button
-                variant="contained"
-                color="primary"
-                startIcon={<RefreshIcon />}
-                onClick={this.reload}
-              >
-                Reload Application
-              </Button>
-
-              <Button variant="outlined" onClick={this.resetError}>
-                Try Again
-              </Button>
-            </Box>
-
-            {/* Show error details in development mode */}
-            {process.env.NODE_ENV === 'development' && this.state.error && (
-              <Box sx={{ mt: 3, textAlign: 'left' }}>
-                <Typography variant="subtitle2" color="error">
-                  Error Details (development only):
-                </Typography>
-                <Box
-                  component="pre"
-                  sx={{
-                    p: 2,
-                    bgcolor: 'background.paper',
-                    border: '1px solid',
-                    borderColor: 'divider',
-                    borderRadius: 1,
-                    overflowX: 'auto',
-                    fontSize: '0.75rem',
-                    mt: 1,
-                  }}
-                >
-                  {this.state.error.toString()}
-                  {this.state.errorInfo?.componentStack}
-                </Box>
-              </Box>
-            )}
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={<RefreshIcon />}
+              onClick={this.reload}
+            >
+              Reload Application
+            </Button>
           </Paper>
         </Box>
       );

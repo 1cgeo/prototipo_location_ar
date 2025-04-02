@@ -1,37 +1,30 @@
 // Path: features\ar\schemas\markerSchema.ts
-import { z } from 'zod';
-
-// Schema for GeoJSON point geometry
-const PointSchema = z.object({
-  type: z.literal('Point'),
-  coordinates: z.tuple([z.number(), z.number()]), // [longitude, latitude]
-});
+export interface PointGeometry {
+  type: 'Point';
+  coordinates: [number, number]; // [longitude, latitude]
+}
 
 // Schema for marker properties
-const MarkerPropertiesSchema = z.object({
-  name: z.string(),
-  category: z.string(),
-  description: z.string().optional(),
-  icon: z.string().optional(),
-});
+export interface MarkerProperties {
+  name: string;
+  category: string;
+  description?: string;
+  icon?: string;
+}
 
 // Schema for an individual marker (GeoJSON Feature)
-const MarkerSchema = z.object({
-  id: z.string(),
-  type: z.literal('Feature'),
-  geometry: PointSchema,
-  properties: MarkerPropertiesSchema,
-});
+export interface Marker {
+  id: string;
+  type: 'Feature';
+  geometry: PointGeometry;
+  properties: MarkerProperties;
+}
 
 // Schema for a collection of markers (GeoJSON FeatureCollection)
-export const MarkersCollectionSchema = z.object({
-  type: z.literal('FeatureCollection'),
-  features: z.array(MarkerSchema),
-});
-
-// TypeScript types derived from Zod schemas
-export type Marker = z.infer<typeof MarkerSchema>;
-export type MarkersCollection = z.infer<typeof MarkersCollectionSchema>;
+export interface MarkersCollection {
+  type: 'FeatureCollection';
+  features: Marker[];
+}
 
 // Extended type with distance and bearing information
 export interface MarkerWithDistance extends Marker {

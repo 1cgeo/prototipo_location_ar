@@ -1,12 +1,13 @@
 // Path: features\ar\components\AROverlay.tsx
 import React, { useMemo } from 'react';
-import { Box, useTheme, SxProps, Theme } from '@mui/material';
-import { useMarkersStore } from '../stores/markersStore';
-import { getVisibleMarkers } from '../utils/distanceCalculations';
+import { Box } from '@mui/material';
+import { useARStore } from '../stores/arStore';
 import {
+  getVisibleMarkers,
   calculateMarkerPosition,
   calculateMarkerSize,
-} from '../utils/arCalculations';
+  calculateVerticalOffset,
+} from '../utils/arUtils';
 import Marker from './Marker';
 import InfoCard from './InfoCard';
 
@@ -21,15 +22,9 @@ interface AROverlayProps {
   };
 }
 
-interface AdjustedMarker {
-  marker: any;
-  position: number;
-  size: number;
-  verticalOffset: number;
-}
-
 /**
- * Simplified component that displays AR markers over the camera feed
+ * Improved AR overlay component that displays markers over the camera feed
+ * with better positioning logic and performance optimizations
  */
 const AROverlay: React.FC<AROverlayProps> = ({
   latitude,
@@ -38,36 +33,65 @@ const AROverlay: React.FC<AROverlayProps> = ({
   orientation,
   dimensions,
 }) => {
-  const theme = useTheme();
-  const { allMarkers, visibleMarkers, selectedMarkerId, setVisibleMarkers } =
-    useMarkersStore();
+  const {
+    allMarkers,
+    visibleMarkers,
+    selectedMarkerId,
+    setVisibleMarkers,
+    refreshMarkers,
+  } = useARStore();
 
-  // Detect device type
-  const { isTablet, fieldOfView, baseMarkerSize } = useMemo(() => {
-    const isTablet = dimensions.width >= 768;
+  const isTablet = dimensions.width >= 768;
 
-    // Adjust field of view based on device and orientation
-    const fieldOfView = isTablet
-      ? orientation === 'landscape'
-        ? 65
-        : 55
-      : orientation === 'landscape'
-        ? 70
-        : 60;
+  // Determine field of view and marker size based on device and camera specs
+  const { fieldOfView, baseMarkerSize } = useMemo(() => {
+    // Get estimated field of view based on device type and orientation
+    // These values are approximations and should be calibrated for actual devices
+    const getEstimatedFOV = () => {
+      // Check if device is probably an ultrawide camera phone
+      const isUltrawide = dimensions.width > 1000 || dimensions.height > 1000;
 
-    // Adjust marker size based on device
-    const baseMarkerSize = isTablet ? 70 : 60;
+      if (isTablet) {
+        // Tablet cameras typically have narrower FOV
+        return orientation === 'landscape'
+          ? isUltrawide
+            ? 70
+            : 60
+          : isUltrawide
+            ? 60
+            : 50;
+      } else {
+        // Phone cameras typically have wider FOV
+        return orientation === 'landscape'
+          ? isUltrawide
+            ? 80
+            : 70
+          : isUltrawide
+            ? 70
+            : 60;
+      }
+    };
 
-    return { isTablet, fieldOfView, baseMarkerSize };
-  }, [dimensions.width, orientation]);
+    // Adjust marker size based on screen density and size
+    const getBaseMarkerSize = () => {
+      const screenDensity = window.devicePixelRatio || 1;
+      const baseSizeByDevice = isTablet ? 70 : 60;
 
-  // Get visible markers based on location and heading
+      // Scale by device pixel ratio but with a cap to prevent huge markers on high DPI
+      return Math.min(baseSizeByDevice * Math.min(screenDensity, 1.5), 90);
+    };
+
+    return {
+      fieldOfView: getEstimatedFOV(),
+      baseMarkerSize: getBaseMarkerSize(),
+    };
+  }, [dimensions, orientation, isTablet]);
+
+  // Get visible markers based on location and heading with caching
   useMemo(() => {
     if (latitude && longitude && heading !== undefined) {
-      // Max distance depends on device size
+      // Only recalculate if we have valid data
       const maxDistance = isTablet ? 600 : 500;
-
-      // Max markers depends on device size
       const maxMarkers = isTablet ? 12 : 8;
 
       const markers = getVisibleMarkers(
@@ -83,47 +107,50 @@ const AROverlay: React.FC<AROverlayProps> = ({
       setVisibleMarkers(markers);
     }
   }, [
+    // Only recalculate on significant changes
     allMarkers,
     fieldOfView,
-    heading,
+    // Round heading to nearest 5 degrees to prevent excessive recalculation
+    Math.round(heading / 5) * 5,
     isTablet,
     latitude,
     longitude,
     setVisibleMarkers,
   ]);
 
-  // Process markers to position them on screen
+  // Process markers to position them on screen with improved layout
   const processedMarkers = useMemo(() => {
     if (!visibleMarkers.length) return [];
 
-    const markers: AdjustedMarker[] = [];
+    return visibleMarkers
+      .map((marker, index) => {
+        // Calculate horizontal position (0-1) with improved edge handling
+        const position = calculateMarkerPosition(
+          marker.bearing,
+          heading,
+          fieldOfView,
+        );
 
-    // Position each marker
-    visibleMarkers.forEach(marker => {
-      // Calculate horizontal position (0-1)
-      const horizontalPosition = calculateMarkerPosition(
-        marker.bearing,
-        heading,
-        fieldOfView,
-      );
+        // Calculate size based on distance with smoother scaling
+        const size = calculateMarkerSize(marker.distance, baseMarkerSize);
 
-      // Calculate size based on distance
-      const size = calculateMarkerSize(marker.distance, baseMarkerSize);
+        // Calculate vertical offset using more sophisticated algorithm
+        // to minimize overlapping markers
+        const verticalOffset = calculateVerticalOffset(
+          index,
+          marker.bearing,
+          marker.distance,
+          size,
+        );
 
-      // Calculate vertical offset to avoid overlaps
-      // This is a simplified approach - just using distance to stagger markers
-      const verticalOffset = (marker.distance % 100) - 50;
-
-      markers.push({
-        marker,
-        position: horizontalPosition,
-        size,
-        verticalOffset,
-      });
-    });
-
-    // Sort by distance so closer markers appear on top
-    return markers.sort((a, b) => a.marker.distance - b.marker.distance);
+        return {
+          marker,
+          position,
+          size,
+          verticalOffset,
+        };
+      })
+      .sort((a, b) => a.marker.distance - b.marker.distance);
   }, [visibleMarkers, heading, fieldOfView, baseMarkerSize]);
 
   // Find the selected marker
@@ -131,32 +158,10 @@ const AROverlay: React.FC<AROverlayProps> = ({
     return visibleMarkers.find(marker => marker.id === selectedMarkerId);
   }, [visibleMarkers, selectedMarkerId]);
 
-  // Calculate InfoCard position based on orientation
-  const infoCardPosition = useMemo((): SxProps<Theme> => {
-    if (orientation === 'landscape') {
-      return {
-        position: 'absolute',
-        right: theme.spacing(2),
-        top: '50%',
-        transform: 'translateY(-50%)',
-        width: isTablet ? '35%' : '45%',
-        maxWidth: 400,
-        maxHeight: '80vh',
-        overflowY: 'auto',
-        zIndex: 100,
-      };
-    } else {
-      return {
-        position: 'absolute',
-        bottom: theme.spacing(2),
-        left: '50%',
-        transform: 'translateX(-50%)',
-        width: isTablet ? '70%' : '90%',
-        maxWidth: 500,
-        zIndex: 100,
-      };
-    }
-  }, [orientation, theme, isTablet]);
+  // Handle location refresh when AR view is active
+  const handleRefreshLocation = () => {
+    refreshMarkers();
+  };
 
   return (
     <Box
@@ -167,7 +172,6 @@ const AROverlay: React.FC<AROverlayProps> = ({
         width: '100%',
         height: '100%',
         pointerEvents: 'none',
-        userSelect: 'none',
       }}
     >
       {/* Render markers */}
@@ -179,25 +183,43 @@ const AROverlay: React.FC<AROverlayProps> = ({
             left: `${position * 100}%`,
             top: '50%',
             transform: `translate(-50%, -50%) translateY(${verticalOffset}px)`,
-            zIndex: 10,
+            zIndex: marker.distance < 100 ? 20 : 10,
+            transition: 'transform 0.2s ease-out, left 0.3s ease-out',
           }}
         >
-          <Marker
-            position={position}
-            size={size}
-            marker={marker}
-            deviceSize={dimensions}
-          />
+          <Marker size={size} marker={marker} />
         </Box>
       ))}
 
       {/* Show info card for selected marker */}
       {selectedMarker && (
-        <Box sx={infoCardPosition}>
+        <Box
+          sx={{
+            position: 'absolute',
+            ...(orientation === 'landscape'
+              ? {
+                  right: 16,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  width: isTablet ? '35%' : '45%',
+                }
+              : {
+                  bottom: 16,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: isTablet ? '70%' : '90%',
+                }),
+            maxWidth: orientation === 'landscape' ? 400 : 500,
+            zIndex: 100,
+            opacity: 1,
+            transition: 'opacity 0.2s ease-in',
+          }}
+        >
           <InfoCard
             marker={selectedMarker}
             orientation={orientation}
             isTablet={isTablet}
+            onRefreshLocation={handleRefreshLocation}
           />
         </Box>
       )}
@@ -205,4 +227,4 @@ const AROverlay: React.FC<AROverlayProps> = ({
   );
 };
 
-export default AROverlay;
+export default React.memo(AROverlay);

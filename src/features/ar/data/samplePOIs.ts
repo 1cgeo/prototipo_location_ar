@@ -2,35 +2,27 @@
 import { MarkersCollection, Marker } from '../schemas/markerSchema';
 
 /**
- * Gera um conjunto de pontos de interesse aleatórios ao redor de uma localização
+ * Gera pontos de interesse aleatórios ao redor de uma localização
  *
- * @param centerLat Latitude central (se não fornecida, usa a posição padrão em São Paulo)
- * @param centerLng Longitude central (se não fornecida, usa a posição padrão em São Paulo)
+ * @param centerLat Latitude central (localização atual do usuário)
+ * @param centerLng Longitude central (localização atual do usuário)
  * @returns Coleção de POIs no formato GeoJSON
  */
-const generateSamplePOIs = (
-  centerLat?: number,
-  centerLng?: number,
+export const generateSamplePOIs = (
+  centerLat: number,
+  centerLng: number,
 ): MarkersCollection => {
-  // Pontos centrais padrão (São Paulo - Praça da Sé)
-  const defaultLat = -23.55052;
-  const defaultLng = -46.633308;
-
-  // Usa os pontos fornecidos ou os padrões
-  const baseLat = centerLat ?? defaultLat;
-  const baseLng = centerLng ?? defaultLng;
-
-  // Categorias e seus ícones correspondentes
+  // Categorias disponíveis
   const categories = [
-    { id: 'restaurante', name: 'Restaurante', icon: 'restaurant' },
-    { id: 'loja', name: 'Loja', icon: 'store' },
-    { id: 'atracao', name: 'Atração Turística', icon: 'museum' },
-    { id: 'servico', name: 'Serviço', icon: 'local_pharmacy' },
-    { id: 'transporte', name: 'Transporte', icon: 'subway' },
+    'restaurante',
+    'loja',
+    'atracao',
+    'servico',
+    'transporte',
   ];
 
   // Nomes de exemplo para cada categoria
-  const names = {
+  const names: Record<string, string[]> = {
     restaurante: [
       'Café Central',
       'Restaurante Bella Vita',
@@ -68,100 +60,82 @@ const generateSamplePOIs = (
     ],
   };
 
-  // Descrições de exemplo para cada categoria
-  const descriptions = {
-    restaurante: [
-      'Café com ambiente agradável e ótimos lanches',
-      'Cozinha tradicional com um toque moderno',
-      'Opções vegetarianas e veganas disponíveis',
-      'Especializado em pratos locais e regionais',
-      'Ótimas opções de café da manhã e brunch',
-    ],
-    loja: [
-      'Grande variedade de produtos e marcas',
-      'Produtos artesanais e feitos à mão',
-      'Ofertas especiais e descontos frequentes',
-      'Atendimento personalizado e produtos exclusivos',
-      'Especializada em produtos sustentáveis',
-    ],
-    atracao: [
-      'Exposições temporárias e acervo permanente',
-      'Vista panorâmica da cidade e região',
-      'Patrimônio histórico com guias disponíveis',
-      'Atividades culturais e educativas',
-      'Local icônico para fotos e turismo',
-    ],
-    servico: [
-      'Atendimento 24 horas e entregas',
-      'Serviço rápido e eficiente',
-      'Profissionais altamente qualificados',
-      'Preços competitivos e bom atendimento',
-      'Diversas opções de pagamento aceitas',
-    ],
-    transporte: [
-      'Conexões para várias linhas de transporte',
-      'Horários frequentes e pontuais',
-      'Fácil acesso e bem localizado',
-      'Opções de integração com outros transportes',
-      'Ambiente seguro e bem iluminado',
-    ],
-  };
+  // Descrições de exemplo
+  const descriptions = [
+    'Ambiente agradável com ótimo atendimento.',
+    'Opções variadas para todos os gostos.',
+    'Localização privilegiada e fácil acesso.',
+    'Preços acessíveis e qualidade garantida.',
+    'Atendimento 24 horas com profissionais qualificados.',
+    'Ideal para visitação em família ou com amigos.',
+    'Referência na região há mais de 20 anos.',
+    'Ambiente moderno com infraestrutura completa.',
+  ];
 
-  // Gera pontos aleatórios em um raio de aproximadamente 300m
-  const generateRandomPoints = (count: number): Marker[] => {
-    const points: Marker[] = [];
+  // Gera pontos distribuídos em todas as direções para facilitar o teste
+  const generateDirectionalMarkers = (count: number): Marker[] => {
+    const markers: Marker[] = [];
 
+    // Vamos distribuir os marcadores em diferentes direções e distâncias
     for (let i = 0; i < count; i++) {
-      // Gera deslocamento aleatório entre -0.003 e 0.003 graus (~ 300m)
-      const latOffset = Math.random() * 0.006 - 0.003;
-      const lngOffset = Math.random() * 0.006 - 0.003;
+      // Distribuir pontos em círculo ao redor do usuário
+      // Ângulo em radianos (distribuído uniformemente em 360°)
+      const angle = (i * 2 * Math.PI) / count;
 
-      // Calcula posição
-      const lat = baseLat + latOffset;
-      const lng = baseLng + lngOffset;
+      // Distância aleatória entre 50m e 300m (convertida para graus)
+      // Isso garante que os marcadores estarão em distâncias curtas e visíveis
+      const distanceMeters = 50 + Math.random() * 250;
+      const distanceDegrees = distanceMeters / 111000; // Aproximação rápida de metros para graus
+
+      // Calcula o deslocamento em latitude e longitude
+      const latOffset = distanceDegrees * Math.cos(angle);
+      const lngOffset =
+        (distanceDegrees * Math.sin(angle)) /
+        Math.cos((centerLat * Math.PI) / 180);
+
+      // Calcula posição final
+      const lat = centerLat + latOffset;
+      const lng = centerLng + lngOffset;
 
       // Escolhe categoria aleatória
-      const category =
-        categories[Math.floor(Math.random() * categories.length)];
+      const category = categories[i % categories.length];
 
-      // Escolhe nome e descrição aleatórios para a categoria
-      const nameArray = names[category.id as keyof typeof names];
-      const descArray = descriptions[category.id as keyof typeof descriptions];
+      // Escolhe nome e descrição aleatórios
+      const categoryNames = names[category] || names['restaurante'];
+      const nameIndex = i % categoryNames.length;
+      const name = categoryNames[nameIndex];
+      const description = descriptions[i % descriptions.length];
 
-      const name = nameArray[Math.floor(Math.random() * nameArray.length)];
-      const description =
-        descArray[Math.floor(Math.random() * descArray.length)];
-
-      // Adiciona o ponto com tipos corretos
-      points.push({
+      // Adiciona o marcador
+      markers.push({
         id: (i + 1).toString(),
-        type: 'Feature' as const, // Tipo literal "Feature" como esperado
+        type: 'Feature',
         geometry: {
-          type: 'Point' as const, // Tipo literal "Point" como esperado
-          coordinates: [lng, lat] as [number, number], // Tupla explícita como esperado
+          type: 'Point',
+          coordinates: [lng, lat],
         },
         properties: {
           name,
-          category: category.id,
+          category,
           description,
-          icon: category.icon,
+          icon: category,
         },
       });
     }
 
-    return points;
+    return markers;
   };
 
-  // Retorna a coleção de POIs com 10 pontos aleatórios
+  // Retorna a coleção de POIs com pontos distribuídos ao redor do usuário
   return {
-    type: 'FeatureCollection' as const, // Tipo literal como esperado
-    features: generateRandomPoints(10),
+    type: 'FeatureCollection',
+    features: generateDirectionalMarkers(12),
   };
 };
 
-// Dados de exemplo para pontos de interesse (POIs)
-// Usando a função de geração com valores padrão
-export const samplePOIs: MarkersCollection = generateSamplePOIs();
-
-// Nota: Para testes reais, você pode chamar generateSamplePOIs
-// com sua localização atual como parâmetro
+// Conjunto inicial vazio para marcadores
+// Será preenchido quando a localização do usuário estiver disponível
+export const samplePOIs: MarkersCollection = {
+  type: 'FeatureCollection',
+  features: [],
+};

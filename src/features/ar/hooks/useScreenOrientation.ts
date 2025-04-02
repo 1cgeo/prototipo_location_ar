@@ -1,7 +1,7 @@
 // Path: features\ar\hooks\useScreenOrientation.ts
 import { useState, useEffect, useCallback } from 'react';
 
-type Orientation = 'portrait' | 'landscape';
+export type Orientation = 'portrait' | 'landscape';
 
 interface ScreenDimensions {
   width: number;
@@ -21,7 +21,6 @@ export const useScreenOrientation = () => {
     height: window.innerHeight,
   });
 
-  // Update dimensions and orientation on resize
   const updateDimensions = useCallback(() => {
     const width = window.innerWidth;
     const height = window.innerHeight;
@@ -34,12 +33,9 @@ export const useScreenOrientation = () => {
     // Initial update
     updateDimensions();
 
-    // Listen for window resize
+    // Event listeners
     window.addEventListener('resize', updateDimensions);
-
-    // Listen for orientation change (mobile)
     window.addEventListener('orientationchange', () => {
-      // Short delay to ensure dimensions are updated
       setTimeout(updateDimensions, 100);
     });
 

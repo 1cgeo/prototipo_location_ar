@@ -5,7 +5,6 @@ import ExploreIcon from '@mui/icons-material/Explore';
 
 interface LoadingStateProps {
   message?: string;
-  progress?: number;
 }
 
 /**
@@ -13,7 +12,6 @@ interface LoadingStateProps {
  */
 const LoadingState: React.FC<LoadingStateProps> = ({
   message = 'Loading...',
-  progress,
 }) => {
   return (
     <Box
@@ -50,34 +48,7 @@ const LoadingState: React.FC<LoadingStateProps> = ({
         {message}
       </Typography>
 
-      {progress !== undefined ? (
-        <Box sx={{ position: 'relative', width: 100, height: 100 }}>
-          <CircularProgress
-            variant="determinate"
-            value={progress}
-            size={100}
-            thickness={4}
-          />
-          <Box
-            sx={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              bottom: 0,
-              right: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Typography variant="body1" color="text.secondary">
-              {`${Math.round(progress)}%`}
-            </Typography>
-          </Box>
-        </Box>
-      ) : (
-        <CircularProgress size={60} thickness={4} />
-      )}
+      <CircularProgress size={60} thickness={4} />
     </Box>
   );
 };
