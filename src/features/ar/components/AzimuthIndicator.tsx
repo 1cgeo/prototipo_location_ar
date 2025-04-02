@@ -2,7 +2,7 @@
 import React from 'react';
 import { Box, Typography, useTheme, alpha } from '@mui/material';
 import NavigationIcon from '@mui/icons-material/Navigation';
-import { azimuthToCardinal } from '../utils/arUtils';
+import { azimuthToCardinal } from '../utils/arjsUtils';
 
 interface AzimuthIndicatorProps {
   heading: number | null;

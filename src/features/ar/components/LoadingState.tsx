@@ -16,29 +16,29 @@ const LoadingState: React.FC<LoadingStateProps> = ({
 }) => {
   const [elapsedTime, setElapsedTime] = useState(0);
   const [showRetry, setShowRetry] = useState(false);
-  
+
   // Increment elapsed time every second
   useEffect(() => {
     const timer = setInterval(() => {
       setElapsedTime(prev => prev + 1);
     }, 1000);
-    
+
     // Show retry button after 15 seconds
     const retryTimer = setTimeout(() => {
       setShowRetry(true);
     }, 15000);
-    
+
     return () => {
       clearInterval(timer);
       clearTimeout(retryTimer);
     };
   }, []);
-  
+
   // Handle refresh on timeout
   const handleRefresh = () => {
     window.location.reload();
   };
-  
+
   return (
     <Box
       sx={{
@@ -73,26 +73,25 @@ const LoadingState: React.FC<LoadingStateProps> = ({
       >
         {message}
       </Typography>
-      
+
       {/* Show elapsed time after 5 seconds */}
       {elapsedTime > 5 && (
         <Typography variant="body2" color="text.secondary">
-          {elapsedTime < 10 
-            ? "Initializing sensors..."
+          {elapsedTime < 10
+            ? 'Initializing sensors...'
             : elapsedTime < 20
-              ? "This is taking longer than usual"
-              : "Still trying to initialize AR view"
-          }
+              ? 'This is taking longer than usual'
+              : 'Still trying to initialize AR view'}
         </Typography>
       )}
 
-      <CircularProgress 
-        size={60} 
-        thickness={4} 
-        variant={elapsedTime > 10 ? "indeterminate" : "indeterminate"} 
+      <CircularProgress
+        size={60}
+        thickness={4}
+        variant={elapsedTime > 10 ? 'indeterminate' : 'indeterminate'}
         value={Math.min(100, elapsedTime * 10)}
       />
-      
+
       {/* Show retry button if it's taking too long */}
       {showRetry && (
         <Button

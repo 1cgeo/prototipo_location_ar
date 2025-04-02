@@ -1,19 +1,25 @@
 // Path: routes\ARViewRoute.tsx
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, useEffect } from 'react';
 import LoadingState from '@/features/ar/components/LoadingState';
 import ErrorBoundary from '@/features/ar/components/ErrorBoundary';
+import { setupARJS } from '@/features/ar/utils/arjsUtils';
 
-// Lazy load the CameraView component for better initial load performance
-const CameraView = lazy(() => import('@/features/ar/components/CameraView'));
+// Lazy load the AR.js View component for better initial load performance
+const ARJSView = lazy(() => import('@/features/ar/components/ARJSView'));
 
 /**
  * AR View route component with error handling and lazy loading
  */
 const ARViewRoute = () => {
+  // Initialize AR.js custom components
+  useEffect(() => {
+    setupARJS();
+  }, []);
+
   return (
     <ErrorBoundary>
       <Suspense fallback={<LoadingState message="Loading AR view..." />}>
-        <CameraView />
+        <ARJSView />
       </Suspense>
     </ErrorBoundary>
   );
