@@ -177,20 +177,5 @@ body {
   display: none !important;
 }
 
-/* Estilo específico para a câmera */
-.a-canvas {
-  background-color: #000 !important;
-}
-
-/* Remover o quadrado azul que aparece na tela */
-a-entity {
-  background-color: transparent !important;
-}
-
-a-box {
-  opacity: 0 !important;
-}
-
-a-scene > a-entity > a-box {
-  display: none !important;
-}
+/* REMOVIDO AS REGRAS QUE ESCONDIAM OS OBJETOS 3D */
+/* Estas regras estavam causando o problema do vídeo */

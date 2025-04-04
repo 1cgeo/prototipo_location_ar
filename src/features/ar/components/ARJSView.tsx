@@ -93,13 +93,12 @@ const ARJSView: React.FC = () => {
     return () => navigator.geolocation.clearWatch(watchId);
   }, [markersGenerated, setCoordinates, generateMarkersAtLocation, updateVisibleMarkers]);
 
-  // Handle device orientation for heading - CORRIGIDO: não inverter a direção da bússola
+  // Handle device orientation for heading - INVERTIDO NOVAMENTE PARA CORRIGIR DIREÇÃO
   useEffect(() => {
     const handleOrientation = (event: DeviceOrientationEvent) => {
       if (event.alpha !== null) {
-        // Alpha value gives us the compass heading (0-360)
-        // Usamos o valor alpha diretamente, sem inverter
-        const heading = event.alpha;
+        // Voltamos à fórmula original que funcionava melhor
+        const heading = 360 - event.alpha;
         setHeading(heading);
       }
     };
@@ -259,7 +258,7 @@ const ARJSView: React.FC = () => {
   return (
     <ErrorBoundary>
       <Box sx={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
-        {/* AR.js Scene - configuração corrigida para exibir o vídeo */}
+        {/* RESTAURADA A CONFIGURAÇÃO ORIGINAL DO SCENE */}
         <Scene
           ref={sceneRef}
           embedded
@@ -275,18 +274,11 @@ const ARJSView: React.FC = () => {
             sourceHeight: dimensions.height,
             displayWidth: dimensions.width,
             displayHeight: dimensions.height,
-            maxDetectionRate: 30,
-            canvasWidth: dimensions.width,
-            canvasHeight: dimensions.height,
-            facingMode: 'environment'
           }}
           vr-mode-ui={{ enabled: false }}
           renderer={{ 
             logarithmicDepthBuffer: true, 
             alpha: true,
-            antialias: false,
-            precision: 'mediump',
-            powerPreference: 'high-performance'
           }}
           style={{
             zIndex: 0,
@@ -297,7 +289,7 @@ const ARJSView: React.FC = () => {
             height: '100%',
           }}
         >
-          {/* Camera */}
+          {/* Camera - configuração original */}
           <Entity 
             primitive="a-camera" 
             gps-camera={{ 
@@ -306,7 +298,6 @@ const ARJSView: React.FC = () => {
               gpsMinDistance: 5,
               gpsTimeInterval: 1000
             }} 
-            position={{ x: 0, y: 0, z: 0 }}
           />
 
           {/* AR content - POI markers */}
