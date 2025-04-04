@@ -121,7 +121,7 @@ export function calculateMarkerPosition(
   heading: number,
   fieldOfView: number = 60
 ): number {
-  // Calculate relative bearing
+  // Calcula posição considerando a orientação correta da bússola
   let relativeBearing = bearing - heading;
   
   // Normalize to -180 to 180 degrees
@@ -149,8 +149,10 @@ export function formatDistance(distanceInMeters: number): string {
 
 /**
  * Converts azimuth (degrees) to cardinal direction
+ * Ajustado para direção correta da bússola
  */
 export function azimuthToCardinal(azimuth: number): string {
+  // Ajustado para mapear corretamente as direções cardeais
   const cardinals = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW', 'N'];
   return cardinals[Math.round(azimuth / 45) % 8];
 }

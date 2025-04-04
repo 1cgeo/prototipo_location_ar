@@ -17,7 +17,7 @@ import { useScreenOrientation } from '../hooks/useScreenOrientation';
 
 /**
  * AR.js View component for location-based AR
- * Versão simplificada sem painel de debug
+ * Versão simplificada
  */
 const ARJSView: React.FC = () => {
   // Using RefObject<any> as a workaround for the Scene component ref
@@ -28,7 +28,6 @@ const ARJSView: React.FC = () => {
   const [cameraErrorDetails, setCameraErrorDetails] = useState<string>("");
   const [showMarkerMessage, setShowMarkerMessage] = useState(false);
   const [permissionsGranted, setPermissionsGranted] = useState(false);
-  const [_cameraRetryCount, setCameraRetryCount] = useState(0);
   const { orientation, dimensions } = useScreenOrientation();
 
   // Get data from store
@@ -65,6 +64,9 @@ const ARJSView: React.FC = () => {
         // Generate markers if not already generated
         if (!markersGenerated && position.coords.latitude && position.coords.longitude) {
           generateMarkersAtLocation(position.coords.latitude, position.coords.longitude);
+        } else {
+          // Atualiza as distâncias em tempo real quando o usuário se move
+          updateVisibleMarkers();
         }
       },
       (error) => {
@@ -89,15 +91,15 @@ const ARJSView: React.FC = () => {
     );
     
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [markersGenerated, setCoordinates, generateMarkersAtLocation]);
+  }, [markersGenerated, setCoordinates, generateMarkersAtLocation, updateVisibleMarkers]);
 
-  // Handle device orientation for heading
+  // Handle device orientation for heading - CORRIGIDO: não inverter a direção da bússola
   useEffect(() => {
     const handleOrientation = (event: DeviceOrientationEvent) => {
       if (event.alpha !== null) {
         // Alpha value gives us the compass heading (0-360)
-        // We need to normalize the value
-        const heading = 360 - event.alpha;
+        // Usamos o valor alpha diretamente, sem inverter
+        const heading = event.alpha;
         setHeading(heading);
       }
     };
@@ -176,7 +178,6 @@ const ARJSView: React.FC = () => {
       setPermissionsGranted(true);
       setIsLoading(false);
       setShowCameraError(false);
-      setCameraRetryCount(0);
     } catch (error) {
       console.error('Camera permission error:', error);
       setPermissionsGranted(false);
@@ -191,7 +192,6 @@ const ARJSView: React.FC = () => {
   const retryCameraAccess = async () => {
     setShowCameraError(false);
     setIsLoading(true);
-    setCameraRetryCount(prev => prev + 1);
     
     // Release camera if possible before retrying
     try {
@@ -259,7 +259,7 @@ const ARJSView: React.FC = () => {
   return (
     <ErrorBoundary>
       <Box sx={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
-        {/* AR.js Scene */}
+        {/* AR.js Scene - configuração corrigida para exibir o vídeo */}
         <Scene
           ref={sceneRef}
           embedded
@@ -275,19 +275,17 @@ const ARJSView: React.FC = () => {
             sourceHeight: dimensions.height,
             displayWidth: dimensions.width,
             displayHeight: dimensions.height,
-            // Enhanced mobile performance settings
             maxDetectionRate: 30,
             canvasWidth: dimensions.width,
             canvasHeight: dimensions.height,
-            performanceProfile: 'lowpower',
-            facingMode: 'environment' // Prefer back camera
+            facingMode: 'environment'
           }}
-          vr-mode-ui={{ enabled: false }} // Disable VR mode UI
+          vr-mode-ui={{ enabled: false }}
           renderer={{ 
             logarithmicDepthBuffer: true, 
             alpha: true,
-            antialias: false, // Disable antialiasing for better performance
-            precision: 'mediump', // Use medium precision for shaders
+            antialias: false,
+            precision: 'mediump',
             powerPreference: 'high-performance'
           }}
           style={{
@@ -308,6 +306,7 @@ const ARJSView: React.FC = () => {
               gpsMinDistance: 5,
               gpsTimeInterval: 1000
             }} 
+            position={{ x: 0, y: 0, z: 0 }}
           />
 
           {/* AR content - POI markers */}

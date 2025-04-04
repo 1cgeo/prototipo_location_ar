@@ -3,7 +3,6 @@ import React from 'react';
 import { Box, Typography, useTheme, alpha } from '@mui/material';
 import NavigationIcon from '@mui/icons-material/Navigation';
 import { azimuthToCardinal } from '../utils/arjsUtils';
-import CompassCalibration from './CompassCalibration';
 
 interface AzimuthIndicatorProps {
   heading: number | null;
@@ -13,7 +12,7 @@ interface AzimuthIndicatorProps {
 
 /**
  * Indicador de bússola simplificado mostrando a direção atual do dispositivo
- * Agora inclui funcionalidade de calibração
+ * Versão sem calibração
  */
 const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
   ({ heading, isLandscape, isCalibrated = true }) => {
@@ -65,13 +64,9 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
             sx={{ 
               mb: 0.5, 
               opacity: 0.8,
-              color: isCalibrated ? 'text.primary' : 'warning.main',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 0.5,
             }}
           >
-            {isCalibrated ? 'Direction' : 'Not Calibrated'}
+            Direction
           </Typography>
           
           <Box
@@ -122,16 +117,13 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
                 top: '50%',
                 left: '50%',
                 transform: `translate(-50%, -50%) rotate(${roundedHeading}deg)`,
-                transition: isCalibrated
-                  ? 'transform 0.1s ease-out'
-                  : 'transform 0.5s ease-out',
+                transition: 'transform 0.1s ease-out',
               }}
             >
               <NavigationIcon
-                color={isCalibrated ? "primary" : "warning"}
+                color="primary"
                 sx={{
                   fontSize: 24,
-                  opacity: isCalibrated ? 1 : 0.7,
                 }}
               />
             </Box>
@@ -144,15 +136,11 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
               mt: 0.5,
               fontWeight: 'medium',
               fontFamily: 'monospace',
-              color: isCalibrated ? 'text.primary' : 'warning.main',
             }}
           >
             {roundedHeading}° {cardinalDirection}
           </Typography>
         </Box>
-        
-        {/* Botão de calibração da bússola */}
-        <CompassCalibration />
       </Box>
     );
   }
