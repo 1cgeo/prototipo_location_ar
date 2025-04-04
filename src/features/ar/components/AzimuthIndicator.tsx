@@ -15,7 +15,7 @@ interface AzimuthIndicatorProps {
  * Versão sem calibração
  */
 const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
-  ({ heading, isLandscape, isCalibrated = true }) => {
+  ({ heading, isLandscape }) => {
     const theme = useTheme();
     
     // Não renderiza se não houver direção
