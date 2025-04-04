@@ -146,11 +146,13 @@ const InfoCard: React.FC<InfoCardProps> = ({
         borderRadius: theme.shape.borderRadius * 1.5,
         overflow: 'hidden',
         transition: 'all 0.2s ease',
-        maxHeight: orientation === 'portrait' ? '70vh' : '85vh',
-        overflowY: 'auto',
         position: 'relative',
         zIndex: 1200,
         borderTop: `4px solid ${categoryColor}`,
+        // Ajustes para garantir que todo o conteúdo seja visível
+        maxHeight: '100%', // Permite expandir até o tamanho do container pai
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
       <CardHeader
@@ -172,15 +174,27 @@ const InfoCard: React.FC<InfoCardProps> = ({
             sx={{
               fontWeight: 600,
               overflow: 'hidden',
+              textOverflow: 'ellipsis',
               lineHeight: 1.2,
               color: theme.palette.text.primary,
+              // Limita para que não quebre o layout
+              maxHeight: '3.6em',
             }}
           >
             {name}
           </Typography>
         }
         subheader={
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{
+              mt: 0.5,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
             {categoryLabel}
           </Typography>
         }
@@ -205,7 +219,28 @@ const InfoCard: React.FC<InfoCardProps> = ({
         }}
       />
 
-      <CardContent sx={{ pt: 2 }}>
+      <CardContent
+        sx={{
+          pt: 2,
+          flex: 1,
+          overflowY: 'auto', // Permite scroll dentro do CardContent
+          // Estilos para a barra de rolagem personalizada
+          '&::-webkit-scrollbar': {
+            width: '6px',
+          },
+          '&::-webkit-scrollbar-track': {
+            background: 'rgba(0,0,0,0.1)',
+            borderRadius: '3px',
+          },
+          '&::-webkit-scrollbar-thumb': {
+            background: 'rgba(0,0,0,0.3)',
+            borderRadius: '3px',
+            '&:hover': {
+              background: 'rgba(0,0,0,0.5)',
+            },
+          },
+        }}
+      >
         {/* Distance, direction and altitude */}
         <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
           <Chip
@@ -252,6 +287,9 @@ const InfoCard: React.FC<InfoCardProps> = ({
             mb: 2,
             lineHeight: 1.6,
             letterSpacing: '0.015em',
+            // Limitando altura da descrição para não ocupar muito espaço
+            maxHeight: orientation === 'portrait' ? '25vh' : '30vh',
+            overflow: 'auto',
           }}
         >
           {description || 'Sem descrição disponível.'}

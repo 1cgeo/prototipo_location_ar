@@ -29,6 +29,7 @@ const ARJSView: React.FC = () => {
   const [showMarkerMessage, setShowMarkerMessage] = useState(false);
   const [permissionsGranted, setPermissionsGranted] = useState(false);
   const [permissionsChecked, setPermissionsChecked] = useState(false);
+  const [compassLocked, setCompassLocked] = useState(false);
   const { orientation, dimensions } = useScreenOrientation();
 
   // Get data from store
@@ -49,9 +50,8 @@ const ARJSView: React.FC = () => {
   // Referências para o filtro de suavização da bússola
   const headingHistoryRef = useRef<number[]>([]);
   const lastValidHeadingRef = useRef<number | null>(null);
-  const deviceOrientationRef = useRef<{ beta: number | null; gamma: number | null }>({
+  const deviceOrientationRef = useRef<{ beta: number | null }>({
     beta: null,
-    gamma: null,
   });
   const lastHeadingTimestampRef = useRef<number>(0);
 
@@ -245,7 +245,8 @@ const ARJSView: React.FC = () => {
     lastHeadingTimestampRef.current = now;
 
     // Verifica mudanças bruscas (possivelmente ruído)
-    const lastHeading = lastValidHeadingRef.current || headingHistoryRef.current[0];
+    const lastHeading =
+      lastValidHeadingRef.current || headingHistoryRef.current[0];
     let headingDiff = Math.abs(newHeading - lastHeading);
     // Ajuste para lidar com a transição 359° -> 0°
     if (headingDiff > 180) {
@@ -254,14 +255,14 @@ const ARJSView: React.FC = () => {
 
     // Se a mudança for muito brusca e rápida, pode ser um erro ou ruído
     // Ignora mudanças muito rápidas a menos que estejamos em posição horizontal
-    const isDeviceNearlyHorizontal = 
-      deviceOrientationRef.current.beta !== null && 
+    const isDeviceNearlyHorizontal =
+      deviceOrientationRef.current.beta !== null &&
       Math.abs(deviceOrientationRef.current.beta) < 25;
-    
+
     // Filtragem mais forte para movimentos bruscos quando não estamos na horizontal
     // (segurando o dispositivo como uma "janela" para o mundo)
-    const isValidReading = isDeviceNearlyHorizontal || 
-      (headingDiff < 45 || timeDelta > 300);
+    const isValidReading =
+      isDeviceNearlyHorizontal || headingDiff < 45 || timeDelta > 300;
 
     if (!isValidReading) {
       // Retorna o último valor válido em caso de leitura duvidosa
@@ -276,7 +277,6 @@ const ARJSView: React.FC = () => {
 
     // Aplica filtro de média ponderada (valores mais recentes têm mais peso)
     const weights = [0.05, 0.05, 0.1, 0.1, 0.1, 0.15, 0.2, 0.25];
-    let filteredHeading = 0;
     let weightSum = 0;
 
     // Calcula média ponderada considerando a circularidade do ângulo
@@ -285,9 +285,10 @@ const ARJSView: React.FC = () => {
     let cosSum = 0;
 
     for (let i = 0; i < headingHistoryRef.current.length; i++) {
-      const weight = weights[weights.length - headingHistoryRef.current.length + i];
+      const weight =
+        weights[weights.length - headingHistoryRef.current.length + i];
       weightSum += weight;
-      
+
       // Converte para radianos e soma componentes vetoriais
       const radians = (headingHistoryRef.current[i] * Math.PI) / 180;
       sinSum += Math.sin(radians) * weight;
@@ -295,14 +296,14 @@ const ARJSView: React.FC = () => {
     }
 
     // Converte de volta para graus
-    filteredHeading = (Math.atan2(sinSum, cosSum) * 180) / Math.PI;
+    let filteredHeading = (Math.atan2(sinSum, cosSum) * 180) / Math.PI;
     if (filteredHeading < 0) {
       filteredHeading += 360;
     }
 
     // Atualiza o último heading válido
     lastValidHeadingRef.current = filteredHeading;
-    
+
     return filteredHeading;
   };
 
@@ -310,15 +311,14 @@ const ARJSView: React.FC = () => {
   const getCompensatedHeading = (
     alpha: number,
     beta: number | null,
-    gamma: number | null
   ): number => {
     // Se não temos dados de inclinação, usamos apenas alpha
-    if (beta === null || gamma === null) {
+    if (beta === null) {
       return 360 - alpha;
     }
 
     // Salva o estado atual da orientação do dispositivo
-    deviceOrientationRef.current = { beta, gamma };
+    deviceOrientationRef.current = { beta };
 
     // Aplicamos um fator de compensação baseado na inclinação (beta)
     // Quando o dispositivo está mais inclinado, reduzimos a influência do magnetômetro
@@ -327,16 +327,21 @@ const ARJSView: React.FC = () => {
     // Compensação suave para quando o dispositivo está sendo inclinado
     // Reduz o impacto das leituras quando o celular não está na horizontal
     const betaAbs = Math.abs(beta);
-    
-    // Quando beta está próximo de 90° (celular na vertical), 
+
+    // Quando beta está próximo de 90° (celular na vertical),
     // a leitura do magnetômetro (alpha) torna-se menos confiável
     if (betaAbs > 45) {
       // Se tivermos um valor anterior válido e a inclinação for muito alta,
       // preferimos o valor anterior para evitar inversões da bússola
-      if (lastValidHeadingRef.current !== null && betaAbs > 70) {
+      if (lastValidHeadingRef.current !== null && betaAbs > 85) {
         // A inclinação é tão alta que preferimos usar o último valor conhecido
+        // Atualiza o estado de bússola travada
+        setCompassLocked(true);
         return lastValidHeadingRef.current;
       }
+    } else {
+      // Inclinação normal, bússola desbloqueada
+      setCompassLocked(false);
     }
 
     return heading;
@@ -349,15 +354,11 @@ const ARJSView: React.FC = () => {
     const handleOrientation = (event: DeviceOrientationEvent) => {
       if (event.alpha !== null) {
         // Obter o heading compensado considerando a inclinação do dispositivo
-        const rawHeading = getCompensatedHeading(
-          event.alpha, 
-          event.beta, 
-          event.gamma
-        );
-        
+        const rawHeading = getCompensatedHeading(event.alpha, event.beta);
+
         // Aplicar filtro de suavização
         const filteredHeading = applyHeadingFilter(rawHeading);
-        
+
         // Atualizar o estado apenas se o valor for válido e diferente do atual
         if (!isNaN(filteredHeading) && filteredHeading !== heading) {
           setHeading(filteredHeading);
@@ -635,6 +636,7 @@ const ARJSView: React.FC = () => {
           <AzimuthIndicator
             heading={heading}
             isLandscape={orientation === 'landscape'}
+            isLocked={compassLocked}
           />
         )}
 
@@ -677,6 +679,8 @@ const ARJSView: React.FC = () => {
                       : '90%',
                 maxWidth: 500,
                 outline: 'none',
+                maxHeight: orientation === 'portrait' ? '85vh' : '90vh',
+                overflowY: 'auto',
               }}
             >
               <ARJSOverlay orientation={orientation} dimensions={dimensions} />

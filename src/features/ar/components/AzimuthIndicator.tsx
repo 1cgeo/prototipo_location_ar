@@ -1,21 +1,23 @@
 // Path: features\ar\components\AzimuthIndicator.tsx
 import React from 'react';
-import { Box, Typography, useTheme, alpha } from '@mui/material';
+import { Box, Typography, useTheme, alpha, Tooltip } from '@mui/material';
 import NavigationIcon from '@mui/icons-material/Navigation';
+import LockIcon from '@mui/icons-material/Lock';
 import { azimuthToCardinal } from '../utils/arjsUtils';
 
 interface AzimuthIndicatorProps {
   heading: number | null;
   isLandscape: boolean;
+  isLocked?: boolean;
   isCalibrated?: boolean;
 }
 
 /**
  * Indicador de bússola simplificado mostrando a direção atual do dispositivo
- * Versão sem calibração
+ * Versão com indicação de travamento
  */
 const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
-  ({ heading, isLandscape }) => {
+  ({ heading, isLandscape, isLocked = false }) => {
     const theme = useTheme();
 
     // Não renderiza se não houver direção
@@ -57,16 +59,34 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
             backdropFilter: 'blur(4px)',
             border: '1px solid rgba(255,255,255,0.1)',
             boxShadow: 2,
+            position: 'relative', // Para posicionar o ícone de travamento
           }}
         >
+          {/* Status da bússola - indica se está travada */}
           <Typography
             variant="caption"
             sx={{
               mb: 0.5,
               opacity: 0.8,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+              color: isLocked ? 'warning.main' : 'inherit',
             }}
           >
-            Direction
+            {isLocked ? 'Bússola travada' : 'Direção'}
+            {isLocked && (
+              <Tooltip
+                title="A bússola está travada devido à inclinação vertical do dispositivo. Segure o dispositivo mais na horizontal para reativar."
+                arrow
+              >
+                <LockIcon
+                  fontSize="small"
+                  color="warning"
+                  sx={{ fontSize: '0.9rem' }}
+                />
+              </Tooltip>
+            )}
           </Typography>
 
           <Box
@@ -75,10 +95,14 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
               height: 60,
               width: 60,
               borderRadius: '50%',
-              border: '2px solid rgba(255,255,255,0.2)',
+              border: `2px solid ${isLocked ? theme.palette.warning.main : 'rgba(255,255,255,0.2)'}`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
+              transition: 'border-color 0.3s ease',
+              backgroundColor: isLocked
+                ? alpha(theme.palette.warning.main, 0.1)
+                : 'transparent',
             }}
           >
             {/* Pontos cardeais */}
@@ -108,7 +132,11 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
                           ? 'translateY(-50%)'
                           : 'none',
                     fontWeight: isHighlighted ? 'bold' : 'normal',
-                    color: isHighlighted ? theme.palette.primary.main : 'white',
+                    color: isHighlighted
+                      ? isLocked
+                        ? theme.palette.warning.main
+                        : theme.palette.primary.main
+                      : 'white',
                   }}
                 >
                   {point}
@@ -127,7 +155,7 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
               }}
             >
               <NavigationIcon
-                color="primary"
+                color={isLocked ? 'warning' : 'primary'}
                 sx={{
                   fontSize: 24,
                 }}
@@ -142,6 +170,7 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
               mt: 0.5,
               fontWeight: 'medium',
               fontFamily: 'monospace',
+              color: isLocked ? theme.palette.warning.main : 'inherit',
             }}
           >
             {roundedHeading}° {cardinalDirection}
