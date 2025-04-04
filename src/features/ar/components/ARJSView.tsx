@@ -28,7 +28,7 @@ const ARJSView: React.FC = () => {
   const [cameraErrorDetails, setCameraErrorDetails] = useState<string>("");
   const [showMarkerMessage, setShowMarkerMessage] = useState(false);
   const [permissionsGranted, setPermissionsGranted] = useState(false);
-  const [cameraRetryCount, setCameraRetryCount] = useState(0);
+  const [_cameraRetryCount, setCameraRetryCount] = useState(0);
   const { orientation, dimensions } = useScreenOrientation();
 
   // Get data from store
