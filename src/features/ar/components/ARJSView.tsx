@@ -1,7 +1,6 @@
 // Path: features\ar\components\ARJSView.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Button, Snackbar, Alert, Typography, Modal } from '@mui/material';
-import BugReportIcon from '@mui/icons-material/BugReport';
+import { Box, Snackbar, Alert, Typography, Modal } from '@mui/material';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import 'aframe';
 import 'ar.js/aframe/build/aframe-ar';
@@ -18,12 +17,12 @@ import { useScreenOrientation } from '../hooks/useScreenOrientation';
 
 /**
  * AR.js View component for location-based AR
+ * Versão simplificada sem painel de debug
  */
 const ARJSView: React.FC = () => {
   // Using RefObject<any> as a workaround for the Scene component ref
   const sceneRef = useRef<any>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [showDebugMode, setShowDebugMode] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showCameraError, setShowCameraError] = useState(false);
   const [cameraErrorDetails, setCameraErrorDetails] = useState<string>("");
@@ -233,60 +232,6 @@ const ARJSView: React.FC = () => {
     }
   }, [sceneRef, updateVisibleMarkers]);
 
-  // Debug view
-  if (showDebugMode) {
-    return (
-      <ErrorBoundary>
-        <Box
-          sx={{
-            padding: 2,
-            height: '100vh',
-            bgcolor: 'background.paper',
-            overflow: 'auto',
-          }}
-        >
-          <Button 
-            variant="contained" 
-            onClick={() => setShowDebugMode(false)}
-            sx={{ mb: 2 }}
-          >
-            RETURN TO AR VIEW
-          </Button>
-          
-          <Alert severity="info" sx={{ mb: 2 }}>
-            AR.js Mode: Active<br />
-            Location: {coordinates.latitude ? 'Available' : 'Unavailable'}<br />
-            Heading: {heading !== null ? `${heading.toFixed(1)}°` : 'Unavailable'}<br />
-            Markers Generated: {markersGenerated ? 'Yes' : 'No'}<br />
-            Number of POIs: {allMarkers.length}<br />
-            Visible Markers: {visibleMarkers.length}<br />
-            Latitude: {coordinates.latitude?.toFixed(6) || 'N/A'}<br />
-            Longitude: {coordinates.longitude?.toFixed(6) || 'N/A'}<br />
-            Accuracy: {coordinates.accuracy?.toFixed(1) || 'N/A'}m<br />
-            Camera Retries: {cameraRetryCount}
-          </Alert>
-          
-          <Button 
-            variant="contained" 
-            color="warning" 
-            onClick={() => window.location.reload()}
-          >
-            Reload Page
-          </Button>
-          
-          <Button 
-            variant="contained" 
-            color="primary" 
-            onClick={retryCameraAccess}
-            sx={{ ml: 2 }}
-          >
-            Retry Camera
-          </Button>
-        </Box>
-      </ErrorBoundary>
-    );
-  }
-
   // UI for when permissions haven't been granted
   if (!permissionsGranted) {
     return (
@@ -306,7 +251,7 @@ const ARJSView: React.FC = () => {
   if (isLoading) {
     return (
       <ErrorBoundary>
-        <LoadingState message="Initializing AR View..." />
+        <LoadingState message="Inicializando AR..." />
       </ErrorBoundary>
     );
   }
@@ -500,44 +445,46 @@ const ARJSView: React.FC = () => {
             p: 3,
           }}>
             <Typography variant="h6" component="h2" sx={{ mb: 2 }}>
-              Webcam Error
+              Erro de Câmera
             </Typography>
             <Typography variant="body2" sx={{ mb: 2 }}>
-              {cameraErrorDetails || "Could not start video source"}
+              {cameraErrorDetails || "Não foi possível iniciar a câmera"}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              This may happen if another app is using your camera or if permissions were denied.
+              Isso pode acontecer se outro aplicativo estiver usando sua câmera ou se as permissões foram negadas.
             </Typography>
             <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between' }}>
-              <Button variant="outlined" onClick={() => setShowCameraError(false)}>
-                Ignore
-              </Button>
-              <Button variant="contained" onClick={retryCameraAccess}>
-                Retry Camera
-              </Button>
-              <Button variant="outlined" color="info" onClick={() => setShowDebugMode(true)}>
-                Debug Mode
-              </Button>
+              <Box sx={{ flex: 1 }} />
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <Box 
+                  onClick={() => setShowCameraError(false)}
+                  sx={{ 
+                    color: 'primary.main',
+                    cursor: 'pointer',
+                    fontWeight: 500,
+                    p: 1
+                  }}
+                >
+                  Ignorar
+                </Box>
+                <Box 
+                  onClick={retryCameraAccess}
+                  sx={{ 
+                    bgcolor: 'primary.main',
+                    color: 'white',
+                    px: 2,
+                    py: 1,
+                    borderRadius: 1,
+                    cursor: 'pointer',
+                    fontWeight: 500
+                  }}
+                >
+                  Tentar Novamente
+                </Box>
+              </Box>
             </Box>
           </Box>
         </Modal>
-
-        {/* Debug mode button */}
-        <Button
-          variant="contained"
-          size="small"
-          onClick={() => setShowDebugMode(true)}
-          startIcon={<BugReportIcon />}
-          sx={{
-            position: 'absolute',
-            bottom: 16,
-            right: 16,
-            zIndex: 1000,
-            opacity: 0.7,
-          }}
-        >
-          Debug
-        </Button>
       </Box>
     </ErrorBoundary>
   );

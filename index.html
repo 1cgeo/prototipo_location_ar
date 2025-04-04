@@ -16,8 +16,13 @@
         touch-action: none;
         padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
       }
-      .a-enter-vr-button {
+      .a-enter-vr, 
+      .a-enter-vr-button,
+      .a-enter-ar-button {
         display: none !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
       }
     </style>
   </head>
