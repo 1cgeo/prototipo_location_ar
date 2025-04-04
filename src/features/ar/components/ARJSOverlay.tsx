@@ -45,7 +45,6 @@ const ARJSOverlay: React.FC<ARJSOverlayProps> = ({
         <AzimuthIndicator
           heading={heading}
           isLandscape={orientation === 'landscape'}
-          isCalibrated={true}
         />
       )}
 

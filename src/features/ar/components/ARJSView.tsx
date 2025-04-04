@@ -356,7 +356,6 @@ const ARJSView: React.FC = () => {
           <AzimuthIndicator
             heading={heading}
             isLandscape={orientation === 'landscape'}
-            isCalibrated={true}
           />
         )}
 
