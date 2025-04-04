@@ -3,6 +3,7 @@ import React from 'react';
 import { Box, Typography, useTheme, alpha } from '@mui/material';
 import NavigationIcon from '@mui/icons-material/Navigation';
 import { azimuthToCardinal } from '../utils/arjsUtils';
+import CompassCalibration from './CompassCalibration';
 
 interface AzimuthIndicatorProps {
   heading: number | null;
@@ -11,19 +12,20 @@ interface AzimuthIndicatorProps {
 }
 
 /**
- * Simplified compass indicator showing current device heading
+ * Indicador de bússola simplificado mostrando a direção atual do dispositivo
+ * Agora inclui funcionalidade de calibração
  */
 const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
   ({ heading, isLandscape, isCalibrated = true }) => {
     const theme = useTheme();
-
-    // Don't render if no heading
+    
+    // Não renderiza se não houver direção
     if (heading === null) return null;
-
-    // Round heading for display
+    
+    // Arredonda a direção para exibição
     const roundedHeading = Math.round(heading);
     const cardinalDirection = azimuthToCardinal(heading);
-
+    
     return (
       <Box
         sx={{
@@ -39,6 +41,10 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
                 right: theme.spacing(2),
               }),
           zIndex: 5,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 1,
         }}
       >
         <Box
@@ -54,10 +60,20 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
             boxShadow: 2,
           }}
         >
-          <Typography variant="caption" sx={{ mb: 0.5, opacity: 0.8 }}>
-            {isCalibrated ? 'Direction' : 'Calibrating...'}
+          <Typography
+            variant="caption"
+            sx={{ 
+              mb: 0.5, 
+              opacity: 0.8,
+              color: isCalibrated ? 'text.primary' : 'warning.main',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.5,
+            }}
+          >
+            {isCalibrated ? 'Direction' : 'Not Calibrated'}
           </Typography>
-
+          
           <Box
             sx={{
               position: 'relative',
@@ -70,11 +86,11 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
               justifyContent: 'center',
             }}
           >
-            {/* Cardinal points */}
+            {/* Pontos cardeais */}
             {['N', 'E', 'S', 'W'].map((point, index) => {
               const angle = index * 90;
               const isHighlighted = cardinalDirection.includes(point);
-
+              
               return (
                 <Typography
                   key={point}
@@ -83,19 +99,13 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
                     position: 'absolute',
                     top: angle === 0 ? 0 : 'auto',
                     bottom: angle === 180 ? 0 : 'auto',
-                    left:
-                      angle === 270
-                        ? 0
-                        : angle === 0 || angle === 180
-                          ? '50%'
-                          : 'auto',
+                    left: angle === 270 ? 0 : (angle === 0 || angle === 180) ? '50%' : 'auto',
                     right: angle === 90 ? 0 : 'auto',
-                    transform:
-                      angle === 0 || angle === 180
-                        ? 'translateX(-50%)'
-                        : angle === 90 || angle === 270
-                          ? 'translateY(-50%)'
-                          : 'none',
+                    transform: (angle === 0 || angle === 180)
+                      ? 'translateX(-50%)'
+                      : (angle === 90 || angle === 270)
+                        ? 'translateY(-50%)'
+                        : 'none',
                     fontWeight: isHighlighted ? 'bold' : 'normal',
                     color: isHighlighted ? theme.palette.primary.main : 'white',
                   }}
@@ -104,8 +114,8 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
                 </Typography>
               );
             })}
-
-            {/* Direction indicator */}
+            
+            {/* Indicador de direção */}
             <Box
               sx={{
                 position: 'absolute',
@@ -118,7 +128,7 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
               }}
             >
               <NavigationIcon
-                color="primary"
+                color={isCalibrated ? "primary" : "warning"}
                 sx={{
                   fontSize: 24,
                   opacity: isCalibrated ? 1 : 0.7,
@@ -126,22 +136,26 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
               />
             </Box>
           </Box>
-
-          {/* Heading display */}
+          
+          {/* Exibição da direção */}
           <Typography
             variant="body2"
             sx={{
               mt: 0.5,
               fontWeight: 'medium',
               fontFamily: 'monospace',
+              color: isCalibrated ? 'text.primary' : 'warning.main',
             }}
           >
             {roundedHeading}° {cardinalDirection}
           </Typography>
         </Box>
+        
+        {/* Botão de calibração da bússola */}
+        <CompassCalibration />
       </Box>
     );
-  },
+  }
 );
 
 AzimuthIndicator.displayName = 'AzimuthIndicator';
