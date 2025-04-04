@@ -1,6 +1,6 @@
 // Path: features\ar\components\ARJSView.tsx
 import React, { useEffect, useRef, useState } from 'react';
-import { Box, Button, Snackbar, Alert, Typography } from '@mui/material';
+import { Box, Button, Snackbar, Alert, Typography, Modal } from '@mui/material';
 import BugReportIcon from '@mui/icons-material/BugReport';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import 'aframe';
@@ -16,9 +16,6 @@ import ARMarkerOverlay from './ARMarkerOverlay';
 import AzimuthIndicator from './AzimuthIndicator';
 import { useScreenOrientation } from '../hooks/useScreenOrientation';
 
-// Note: Removed the problematic isMobile override
-// AFRAME.utils.device.isMobile = function () { return true; };
-
 /**
  * AR.js View component for location-based AR
  */
@@ -28,8 +25,11 @@ const ARJSView: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [showDebugMode, setShowDebugMode] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showCameraError, setShowCameraError] = useState(false);
+  const [cameraErrorDetails, setCameraErrorDetails] = useState<string>("");
   const [showMarkerMessage, setShowMarkerMessage] = useState(false);
   const [permissionsGranted, setPermissionsGranted] = useState(false);
+  const [cameraRetryCount, setCameraRetryCount] = useState(0);
   const { orientation, dimensions } = useScreenOrientation();
 
   // Get data from store
@@ -110,6 +110,48 @@ const ARJSView: React.FC = () => {
     };
   }, [setHeading]);
 
+  // Monitor and handle camera errors from A-Frame
+  useEffect(() => {
+    // Helper to capture camera errors from A-Frame/AR.js
+    const handleCameraError = (error: ErrorEvent) => {
+      // Check if it's a camera-related error from AR.js
+      if (error.message && (
+          error.message.includes('camera') || 
+          error.message.includes('video') || 
+          error.message.includes('getUserMedia') ||
+          error.message.includes('NotReadableError')
+        )) {
+        console.error('Camera error detected:', error);
+        setCameraErrorDetails(error.message || "Camera access error");
+        setShowCameraError(true);
+        setIsLoading(false);
+      }
+    };
+
+    // Listen for AR.js specific errors
+    window.addEventListener('error', handleCameraError);
+    
+    // Also set up a specific handler for A-Frame's camera errors
+    if (typeof window !== 'undefined' && window.AFRAME) {
+      const onArError = (ev: any) => {
+        if (ev.detail && ev.detail.error) {
+          handleCameraError(new ErrorEvent('error', {
+            message: `AR.js: ${ev.detail.error}`
+          }));
+        }
+      };
+      document.addEventListener('ar-camera-error', onArError);
+      return () => {
+        window.removeEventListener('error', handleCameraError);
+        document.removeEventListener('ar-camera-error', onArError);
+      };
+    }
+    
+    return () => {
+      window.removeEventListener('error', handleCameraError);
+    };
+  }, []);
+
   // Set up communication bridge with AR.js
   useEffect(() => {
     // Bridge between React and AR.js
@@ -127,13 +169,43 @@ const ARJSView: React.FC = () => {
   // Handle camera permissions
   const requestCameraPermission = async () => {
     try {
-      await navigator.mediaDevices.getUserMedia({ video: true });
+      await navigator.mediaDevices.getUserMedia({ 
+        video: {
+          facingMode: 'environment' // Prefer back camera
+        } 
+      });
       setPermissionsGranted(true);
       setIsLoading(false);
+      setShowCameraError(false);
+      setCameraRetryCount(0);
     } catch (error) {
+      console.error('Camera permission error:', error);
       setPermissionsGranted(false);
       setErrorMessage("Camera permission denied");
+      if (error instanceof Error) {
+        setCameraErrorDetails(error.message);
+      }
     }
+  };
+
+  // Handle camera retry
+  const retryCameraAccess = async () => {
+    setShowCameraError(false);
+    setIsLoading(true);
+    setCameraRetryCount(prev => prev + 1);
+    
+    // Release camera if possible before retrying
+    try {
+      const tracks = await navigator.mediaDevices.getUserMedia({ video: true });
+      tracks.getTracks().forEach(track => track.stop());
+    } catch (e) {
+      // Ignore errors here, just trying to release the camera
+    }
+    
+    // Wait a moment and retry
+    setTimeout(() => {
+      requestCameraPermission();
+    }, 1000);
   };
 
   // Show markers generated message
@@ -190,7 +262,8 @@ const ARJSView: React.FC = () => {
             Visible Markers: {visibleMarkers.length}<br />
             Latitude: {coordinates.latitude?.toFixed(6) || 'N/A'}<br />
             Longitude: {coordinates.longitude?.toFixed(6) || 'N/A'}<br />
-            Accuracy: {coordinates.accuracy?.toFixed(1) || 'N/A'}m
+            Accuracy: {coordinates.accuracy?.toFixed(1) || 'N/A'}m<br />
+            Camera Retries: {cameraRetryCount}
           </Alert>
           
           <Button 
@@ -199,6 +272,15 @@ const ARJSView: React.FC = () => {
             onClick={() => window.location.reload()}
           >
             Reload Page
+          </Button>
+          
+          <Button 
+            variant="contained" 
+            color="primary" 
+            onClick={retryCameraAccess}
+            sx={{ ml: 2 }}
+          >
+            Retry Camera
           </Button>
         </Box>
       </ErrorBoundary>
@@ -252,9 +334,10 @@ const ARJSView: React.FC = () => {
             maxDetectionRate: 30,
             canvasWidth: dimensions.width,
             canvasHeight: dimensions.height,
-            performanceProfile: 'lowpower'
+            performanceProfile: 'lowpower',
+            facingMode: 'environment' // Prefer back camera
           }}
-          vr-mode-ui={{ enabled: false }}
+          vr-mode-ui={{ enabled: false }} // Disable VR mode UI
           renderer={{ 
             logarithmicDepthBuffer: true, 
             alpha: true,
@@ -285,6 +368,11 @@ const ARJSView: React.FC = () => {
           {/* AR content - POI markers */}
           {markersGenerated && coordinates.latitude && coordinates.longitude && allMarkers.map(marker => {
             const [lng, lat] = marker.geometry.coordinates;
+            // Only create entities for markers in the current visible list
+            const isVisible = visibleMarkers.some(visibleMarker => visibleMarker.id === marker.id);
+            
+            if (!isVisible) return null;
+            
             return (
               <Entity
                 key={marker.id}
@@ -319,7 +407,7 @@ const ARJSView: React.FC = () => {
           })}
         </Scene>
 
-        {/* Compass indicator */}
+        {/* Compass indicator - only show when no marker is selected */}
         {!selectedMarkerId && heading !== null && (
           <AzimuthIndicator
             heading={heading}
@@ -328,20 +416,48 @@ const ARJSView: React.FC = () => {
           />
         )}
 
-        {/* Marker UI Overlay */}
-        <ARMarkerOverlay 
-          markers={visibleMarkers}
-          orientation={orientation}
-          dimensions={dimensions}
-          heading={heading || 0}
-        />
-
-        {/* Info Card for selected marker */}
-        {selectedMarkerId && (
-          <ARJSOverlay
+        {/* Marker UI Overlay - Only show when no marker is selected */}
+        {!selectedMarkerId && (
+          <ARMarkerOverlay 
+            markers={visibleMarkers}
             orientation={orientation}
             dimensions={dimensions}
+            heading={heading || 0}
           />
+        )}
+
+        {/* Info Card for selected marker as Modal */}
+        {selectedMarkerId && (
+          <Modal
+            open={!!selectedMarkerId}
+            onClose={() => selectMarker(null)}
+            aria-labelledby="marker-info-modal"
+            aria-describedby="marker-information-details"
+            sx={{
+              display: 'flex',
+              alignItems: orientation === 'landscape' ? 'center' : 'flex-end',
+              justifyContent: 'center',
+              p: 2,
+            }}
+            BackdropProps={{
+              sx: { backgroundColor: 'rgba(0,0,0,0.5)' }
+            }}
+          >
+            <Box
+              sx={{
+                width: orientation === 'landscape' 
+                  ? (dimensions.width >= 768 ? '40%' : '60%')
+                  : (dimensions.width >= 768 ? '70%' : '90%'),
+                maxWidth: 500,
+                outline: 'none',
+              }}
+            >
+              <ARJSOverlay
+                orientation={orientation}
+                dimensions={dimensions}
+              />
+            </Box>
+          </Modal>
         )}
 
         {/* Marker generation notice */}
@@ -364,6 +480,47 @@ const ARJSView: React.FC = () => {
             </Typography>
           </Alert>
         </Snackbar>
+
+        {/* Camera Error Dialog */}
+        <Modal
+          open={showCameraError}
+          onClose={() => setShowCameraError(false)}
+          aria-labelledby="camera-error-dialog"
+        >
+          <Box sx={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: '85%',
+            maxWidth: 400,
+            bgcolor: 'background.paper',
+            borderRadius: 2,
+            boxShadow: 24,
+            p: 3,
+          }}>
+            <Typography variant="h6" component="h2" sx={{ mb: 2 }}>
+              Webcam Error
+            </Typography>
+            <Typography variant="body2" sx={{ mb: 2 }}>
+              {cameraErrorDetails || "Could not start video source"}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              This may happen if another app is using your camera or if permissions were denied.
+            </Typography>
+            <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between' }}>
+              <Button variant="outlined" onClick={() => setShowCameraError(false)}>
+                Ignore
+              </Button>
+              <Button variant="contained" onClick={retryCameraAccess}>
+                Retry Camera
+              </Button>
+              <Button variant="outlined" color="info" onClick={() => setShowDebugMode(true)}>
+                Debug Mode
+              </Button>
+            </Box>
+          </Box>
+        </Modal>
 
         {/* Debug mode button */}
         <Button

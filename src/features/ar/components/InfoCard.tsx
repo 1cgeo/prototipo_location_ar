@@ -38,28 +38,36 @@ const CATEGORY_TRANSLATIONS: Record<string, string> = {
 /**
  * Displays information about a selected marker
  */
-const InfoCard: React.FC<InfoCardProps> = ({ marker, isTablet }) => {
+const InfoCard: React.FC<InfoCardProps> = ({ marker, orientation, isTablet }) => {
   const theme = useTheme();
   const { selectMarker } = useARStore();
-
+  
   // Extract marker data
   const { name, category, description } = marker.properties;
   const distance = formatDistance(marker.distance);
   const azimuth = Math.round(marker.bearing);
   const cardinalDirection = azimuthToCardinal(marker.bearing);
   const categoryLabel = CATEGORY_TRANSLATIONS[category] || category;
-
+  
+  // Handle close with better click target
+  const handleClose = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    selectMarker(null);
+  };
+  
   return (
     <Card
       elevation={6}
       sx={{
         backdropFilter: 'blur(10px)',
-        backgroundColor: alpha(theme.palette.background.paper, 0.8),
+        backgroundColor: alpha(theme.palette.background.paper, 0.9),
         borderRadius: theme.shape.borderRadius * 1.5,
         overflow: 'hidden',
         transition: 'all 0.2s ease',
-        maxHeight: '60vh',
+        maxHeight: orientation === 'portrait' ? '70vh' : '85vh',
         overflowY: 'auto',
+        position: 'relative',
+        zIndex: 1200,
       }}
     >
       <CardHeader
@@ -77,12 +85,21 @@ const InfoCard: React.FC<InfoCardProps> = ({ marker, isTablet }) => {
           </Typography>
         }
         action={
-          <IconButton onClick={() => selectMarker(null)}>
+          <IconButton 
+            onClick={handleClose}
+            aria-label="close"
+            sx={{
+              backgroundColor: 'rgba(0,0,0,0.08)',
+              '&:hover': {
+                backgroundColor: 'rgba(0,0,0,0.14)',
+              },
+            }}
+          >
             <CloseIcon />
           </IconButton>
         }
       />
-
+      
       <CardContent>
         {/* Category and distance tags */}
         <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
@@ -99,12 +116,16 @@ const InfoCard: React.FC<InfoCardProps> = ({ marker, isTablet }) => {
             color="primary"
           />
         </Box>
-
+        
         {/* Description */}
-        <Typography variant="body2" color="text.secondary" paragraph>
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          paragraph
+        >
           {description || 'No description available.'}
         </Typography>
-
+        
         {/* Direction */}
         <Box
           sx={{
@@ -121,20 +142,22 @@ const InfoCard: React.FC<InfoCardProps> = ({ marker, isTablet }) => {
               sx={{ transform: `rotate(${azimuth}deg)` }}
             />
             <Typography variant="body2">
-              Direction:{' '}
-              <strong>
-                {azimuth}° {cardinalDirection}
-              </strong>
+              Direction: <strong>{azimuth}° {cardinalDirection}</strong>
             </Typography>
           </Box>
         </Box>
-
-        {/* Close button */}
+        
+        {/* Close button - more prominent */}
         <Button
-          variant="outlined"
-          onClick={() => selectMarker(null)}
+          variant="contained"
+          onClick={handleClose}
           fullWidth
-          sx={{ mt: 2 }}
+          size="large"
+          sx={{ 
+            mt: 3,
+            py: 1.2,
+            fontSize: '1rem',
+          }}
         >
           Close
         </Button>
