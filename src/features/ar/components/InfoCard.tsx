@@ -60,10 +60,14 @@ const CATEGORY_COLORS: Record<string, string> = {
 /**
  * Exibe informações sobre um marcador selecionado
  */
-const InfoCard: React.FC<InfoCardProps> = ({ marker, orientation, isTablet }) => {
+const InfoCard: React.FC<InfoCardProps> = ({
+  marker,
+  orientation,
+  isTablet,
+}) => {
   const theme = useTheme();
   const { selectMarker } = useARStore();
-  
+
   // Extrai dados do marcador
   const { name, category, description } = marker.properties;
   const distance = formatDistance(marker.distance);
@@ -71,7 +75,7 @@ const InfoCard: React.FC<InfoCardProps> = ({ marker, orientation, isTablet }) =>
   const cardinalDirection = azimuthToCardinal(marker.bearing);
   const categoryLabel = CATEGORY_TRANSLATIONS[category] || category;
   const categoryColor = CATEGORY_COLORS[category] || CATEGORY_COLORS.default;
-  
+
   // Obtem ícone para categoria
   const getCategoryIcon = (category: string) => {
     switch (category) {
@@ -93,13 +97,13 @@ const InfoCard: React.FC<InfoCardProps> = ({ marker, orientation, isTablet }) =>
         return <LocationOnIcon />;
     }
   };
-  
+
   // Manipula fechamento com melhor área de clique
   const handleClose = (event: React.MouseEvent) => {
     event.stopPropagation();
     selectMarker(null);
   };
-  
+
   return (
     <Card
       elevation={6}
@@ -119,7 +123,7 @@ const InfoCard: React.FC<InfoCardProps> = ({ marker, orientation, isTablet }) =>
       <CardHeader
         avatar={
           <Avatar
-            sx={{ 
+            sx={{
               bgcolor: categoryColor,
               color: '#fff',
               boxShadow: `0 3px 5px ${alpha(categoryColor, 0.4)}`,
@@ -143,16 +147,12 @@ const InfoCard: React.FC<InfoCardProps> = ({ marker, orientation, isTablet }) =>
           </Typography>
         }
         subheader={
-          <Typography 
-            variant="body2" 
-            color="text.secondary"
-            sx={{ mt: 0.5 }}
-          >
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
             {categoryLabel}
           </Typography>
         }
         action={
-          <IconButton 
+          <IconButton
             onClick={handleClose}
             aria-label="close"
             sx={{
@@ -171,7 +171,7 @@ const InfoCard: React.FC<InfoCardProps> = ({ marker, orientation, isTablet }) =>
           borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
         }}
       />
-      
+
       <CardContent sx={{ pt: 2 }}>
         {/* Distância e direção */}
         <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
@@ -182,7 +182,7 @@ const InfoCard: React.FC<InfoCardProps> = ({ marker, orientation, isTablet }) =>
             color="primary"
             sx={{ borderRadius: 4 }}
           />
-          
+
           <Chip
             icon={
               <NavigationIcon sx={{ transform: `rotate(${azimuth}deg)` }} />
@@ -193,7 +193,7 @@ const InfoCard: React.FC<InfoCardProps> = ({ marker, orientation, isTablet }) =>
             sx={{ borderRadius: 4 }}
           />
         </Box>
-        
+
         {/* Descrição */}
         <Typography
           variant="body1"
@@ -209,7 +209,7 @@ const InfoCard: React.FC<InfoCardProps> = ({ marker, orientation, isTablet }) =>
         >
           {description || 'Sem descrição disponível.'}
         </Typography>
-        
+
         {/* Direção - Estilo melhorado */}
         <Box
           sx={{
@@ -225,33 +225,37 @@ const InfoCard: React.FC<InfoCardProps> = ({ marker, orientation, isTablet }) =>
             backgroundColor: alpha(theme.palette.background.default, 0.4),
           }}
         >
-          <Box sx={{ 
-            position: 'relative',
-            width: 80,
-            height: 80,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: '50%',
-            border: `2px solid ${alpha(categoryColor, 0.3)}`,
-            mb: 1,
-          }}>
-            <Box sx={{
-              position: 'absolute',
-              top: '50%',
-              left: '50%',
-              transform: `translate(-50%, -50%) rotate(${azimuth}deg)`,
-              transition: 'transform 0.3s ease-out',
-            }}>
-              <NavigationIcon 
-                sx={{ 
-                  fontSize: 32, 
+          <Box
+            sx={{
+              position: 'relative',
+              width: 80,
+              height: 80,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: '50%',
+              border: `2px solid ${alpha(categoryColor, 0.3)}`,
+              mb: 1,
+            }}
+          >
+            <Box
+              sx={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: `translate(-50%, -50%) rotate(${azimuth}deg)`,
+                transition: 'transform 0.3s ease-out',
+              }}
+            >
+              <NavigationIcon
+                sx={{
+                  fontSize: 32,
                   color: categoryColor,
                   filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))',
-                }} 
+                }}
               />
             </Box>
-            
+
             {/* Pontos cardeais */}
             {['N', 'E', 'S', 'W'].map((point, index) => {
               const angle = index * 90;
@@ -263,13 +267,19 @@ const InfoCard: React.FC<InfoCardProps> = ({ marker, orientation, isTablet }) =>
                     position: 'absolute',
                     top: angle === 0 ? 5 : 'auto',
                     bottom: angle === 180 ? 5 : 'auto',
-                    left: angle === 270 ? 5 : (angle === 0 || angle === 180) ? '50%' : 'auto',
+                    left:
+                      angle === 270
+                        ? 5
+                        : angle === 0 || angle === 180
+                          ? '50%'
+                          : 'auto',
                     right: angle === 90 ? 5 : 'auto',
-                    transform: (angle === 0 || angle === 180)
-                      ? 'translateX(-50%)'
-                      : (angle === 90 || angle === 270)
-                        ? 'translateY(-50%)'
-                        : 'none',
+                    transform:
+                      angle === 0 || angle === 180
+                        ? 'translateX(-50%)'
+                        : angle === 90 || angle === 270
+                          ? 'translateY(-50%)'
+                          : 'none',
                     fontWeight: 'bold',
                     fontSize: '0.7rem',
                   }}
@@ -279,19 +289,22 @@ const InfoCard: React.FC<InfoCardProps> = ({ marker, orientation, isTablet }) =>
               );
             })}
           </Box>
-          
+
           <Typography variant="body2" fontWeight="medium">
-            Direção: <strong>{azimuth}° {cardinalDirection}</strong>
+            Direção:{' '}
+            <strong>
+              {azimuth}° {cardinalDirection}
+            </strong>
           </Typography>
         </Box>
-        
+
         {/* Botão fechar - mais proeminente */}
         <Button
           variant="contained"
           onClick={handleClose}
           fullWidth
           size="large"
-          sx={{ 
+          sx={{
             mt: 3,
             py: 1.2,
             fontSize: '1rem',

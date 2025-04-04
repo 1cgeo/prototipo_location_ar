@@ -17,14 +17,14 @@ interface AzimuthIndicatorProps {
 const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
   ({ heading, isLandscape }) => {
     const theme = useTheme();
-    
+
     // Não renderiza se não houver direção
     if (heading === null) return null;
-    
+
     // Arredonda a direção para exibição
     const roundedHeading = Math.round(heading);
     const cardinalDirection = azimuthToCardinal(heading);
-    
+
     return (
       <Box
         sx={{
@@ -61,14 +61,14 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
         >
           <Typography
             variant="caption"
-            sx={{ 
-              mb: 0.5, 
+            sx={{
+              mb: 0.5,
               opacity: 0.8,
             }}
           >
             Direction
           </Typography>
-          
+
           <Box
             sx={{
               position: 'relative',
@@ -85,7 +85,7 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
             {['N', 'E', 'S', 'W'].map((point, index) => {
               const angle = index * 90;
               const isHighlighted = cardinalDirection.includes(point);
-              
+
               return (
                 <Typography
                   key={point}
@@ -94,13 +94,19 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
                     position: 'absolute',
                     top: angle === 0 ? 0 : 'auto',
                     bottom: angle === 180 ? 0 : 'auto',
-                    left: angle === 270 ? 0 : (angle === 0 || angle === 180) ? '50%' : 'auto',
+                    left:
+                      angle === 270
+                        ? 0
+                        : angle === 0 || angle === 180
+                          ? '50%'
+                          : 'auto',
                     right: angle === 90 ? 0 : 'auto',
-                    transform: (angle === 0 || angle === 180)
-                      ? 'translateX(-50%)'
-                      : (angle === 90 || angle === 270)
-                        ? 'translateY(-50%)'
-                        : 'none',
+                    transform:
+                      angle === 0 || angle === 180
+                        ? 'translateX(-50%)'
+                        : angle === 90 || angle === 270
+                          ? 'translateY(-50%)'
+                          : 'none',
                     fontWeight: isHighlighted ? 'bold' : 'normal',
                     color: isHighlighted ? theme.palette.primary.main : 'white',
                   }}
@@ -109,7 +115,7 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
                 </Typography>
               );
             })}
-            
+
             {/* Indicador de direção */}
             <Box
               sx={{
@@ -128,7 +134,7 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
               />
             </Box>
           </Box>
-          
+
           {/* Exibição da direção */}
           <Typography
             variant="body2"
@@ -143,7 +149,7 @@ const AzimuthIndicator: React.FC<AzimuthIndicatorProps> = React.memo(
         </Box>
       </Box>
     );
-  }
+  },
 );
 
 AzimuthIndicator.displayName = 'AzimuthIndicator';

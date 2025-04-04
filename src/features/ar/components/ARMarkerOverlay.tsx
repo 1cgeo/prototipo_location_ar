@@ -46,57 +46,71 @@ const ARMarkerOverlay: React.FC<ARMarkerOverlayProps> = ({
   markers,
   heading,
   orientation,
-  dimensions
+  dimensions,
 }) => {
   const { selectMarker } = useARStore();
   const isTablet = dimensions.width >= 768;
-  
+
   // Determina o campo de visão com base no dispositivo e orientação
   const fieldOfView = useMemo(() => {
     return isTablet
-      ? orientation === 'landscape' ? 65 : 55
-      : orientation === 'landscape' ? 70 : 60;
+      ? orientation === 'landscape'
+        ? 65
+        : 55
+      : orientation === 'landscape'
+        ? 70
+        : 60;
   }, [dimensions.width, orientation, isTablet]);
-  
+
   // Processa e filtra os markers
   const visibleMarkers = useMemo(() => {
     if (!markers.length) return [];
-    
-    // Filtra por distância máxima primeiro
-    const distanceFiltered = markers.filter(marker => marker.distance <= MAX_MARKER_DISTANCE);
-    
-    // Processa os markers para determinar posição e visibilidade
-    return distanceFiltered.map(marker => {
-      // Calcula a posição horizontal relativa (0-1)
-      // Onde 0 = extrema esquerda, 0.5 = centro, 1 = extrema direita
-      const relativeBearing = ((marker.bearing - heading + 540) % 360) - 180;
-      
-      // Converte o ângulo relativo em posição na tela
-      const position = 0.5 + relativeBearing / fieldOfView;
-      
-      // Determina se o marker está realmente dentro do campo de visão
-      // com uma pequena margem para evitar aparecimento/desaparecimento abrupto
-      const isInFieldOfView = Math.abs(relativeBearing) <= (fieldOfView / 2 + 5);
 
-      // Ajuste o tamanho com base na distância (mais próximo = maior)
-      const sizeFactor = Math.max(0.2, Math.min(1.0, 1 - (marker.distance / MAX_MARKER_DISTANCE)));
-      const baseSize = isTablet ? 55 : 45;
-      const size = baseSize * sizeFactor;
-      
-      return {
-        marker,
-        position,
-        size,
-        isInFieldOfView,
-        relativeBearing
-      };
-    })
-    // Filtra apenas os markers que estão realmente no campo de visão
-    .filter(item => item.isInFieldOfView)
-    // Ordena por distância para que os markers mais próximos apareçam em cima
-    .sort((a, b) => a.marker.distance - b.marker.distance);
+    // Filtra por distância máxima primeiro
+    const distanceFiltered = markers.filter(
+      marker => marker.distance <= MAX_MARKER_DISTANCE,
+    );
+
+    // Processa os markers para determinar posição e visibilidade
+    return (
+      distanceFiltered
+        .map(marker => {
+          // Calcula a posição horizontal relativa (0-1)
+          // Onde 0 = extrema esquerda, 0.5 = centro, 1 = extrema direita
+          const relativeBearing =
+            ((marker.bearing - heading + 540) % 360) - 180;
+
+          // Converte o ângulo relativo em posição na tela
+          const position = 0.5 + relativeBearing / fieldOfView;
+
+          // Determina se o marker está realmente dentro do campo de visão
+          // com uma pequena margem para evitar aparecimento/desaparecimento abrupto
+          const isInFieldOfView =
+            Math.abs(relativeBearing) <= fieldOfView / 2 + 5;
+
+          // Ajuste o tamanho com base na distância (mais próximo = maior)
+          const sizeFactor = Math.max(
+            0.2,
+            Math.min(1.0, 1 - marker.distance / MAX_MARKER_DISTANCE),
+          );
+          const baseSize = isTablet ? 55 : 45;
+          const size = baseSize * sizeFactor;
+
+          return {
+            marker,
+            position,
+            size,
+            isInFieldOfView,
+            relativeBearing,
+          };
+        })
+        // Filtra apenas os markers que estão realmente no campo de visão
+        .filter(item => item.isInFieldOfView)
+        // Ordena por distância para que os markers mais próximos apareçam em cima
+        .sort((a, b) => a.marker.distance - b.marker.distance)
+    );
   }, [markers, heading, fieldOfView, isTablet]);
-  
+
   // Obtem ícone para cada categoria
   const getCategoryIcon = (category: string) => {
     switch (category) {
@@ -118,62 +132,65 @@ const ARMarkerOverlay: React.FC<ARMarkerOverlayProps> = ({
         return <LocationOnIcon />;
     }
   };
-  
+
   // Obtem cor para cada categoria
   const getCategoryColor = (category: string) => {
     return CATEGORY_COLORS[category] || CATEGORY_COLORS.default;
   };
-  
+
   // Calcula distribuição vertical para evitar sobreposição
   const distributedMarkers = useMemo(() => {
     if (!visibleMarkers.length) return [];
-    
+
     // Agrupa markers que estão próximos na horizontal
     const groups: Array<typeof visibleMarkers> = [];
     const POSITION_THRESHOLD = 0.15; // Limiar para considerar markers no mesmo grupo horizontal
-    
+
     // Cria grupos de markers próximos
     visibleMarkers.forEach(marker => {
       // Procura um grupo existente onde este marker possa ser adicionado
       const existingGroup = groups.find(group => {
-        return group.some(item => 
-          Math.abs(item.position - marker.position) < POSITION_THRESHOLD
+        return group.some(
+          item =>
+            Math.abs(item.position - marker.position) < POSITION_THRESHOLD,
         );
       });
-      
+
       if (existingGroup) {
         existingGroup.push(marker);
       } else {
         groups.push([marker]);
       }
     });
-    
+
     // Para cada grupo, distribui verticalmente os markers
-    const result: Array<typeof visibleMarkers[0] & { verticalOffset: number }> = [];
-    
+    const result: Array<
+      (typeof visibleMarkers)[0] & { verticalOffset: number }
+    > = [];
+
     groups.forEach(group => {
       group.forEach((marker, index) => {
         // Distribui verticalmente com base no índice
         // Valores de offset entre -20% e +20% da altura da tela
         const totalMarkers = group.length;
         let verticalOffset = 0;
-        
+
         if (totalMarkers > 1) {
           // Centraliza a distribuição vertical
           const step = 0.4 / (totalMarkers - 1);
-          verticalOffset = -0.2 + (index * step);
+          verticalOffset = -0.2 + index * step;
         }
-        
+
         result.push({
           ...marker,
-          verticalOffset
+          verticalOffset,
         });
       });
     });
-    
+
     return result;
   }, [visibleMarkers]);
-  
+
   return (
     <Box
       sx={{
@@ -189,11 +206,14 @@ const ARMarkerOverlay: React.FC<ARMarkerOverlayProps> = ({
       {/* Renderiza apenas os markers visíveis */}
       {distributedMarkers.map(({ marker, position, size, verticalOffset }) => {
         // Calcula opacidade com base na distância
-        const opacityByDistance = Math.max(0.6, Math.min(1, 1 - marker.distance / MAX_MARKER_DISTANCE));
+        const opacityByDistance = Math.max(
+          0.6,
+          Math.min(1, 1 - marker.distance / MAX_MARKER_DISTANCE),
+        );
         const isPulsingMarker = marker.distance < 100; // Pulsa para markers próximos
         const formattedDistance = formatDistance(marker.distance);
         const markerColor = getCategoryColor(marker.properties.category);
-        
+
         return (
           <Box
             key={marker.id}
@@ -253,7 +273,7 @@ const ARMarkerOverlay: React.FC<ARMarkerOverlayProps> = ({
                 >
                   {getCategoryIcon(marker.properties.category)}
                 </Box>
-                
+
                 {/* Rótulo do marker - Estilo melhorado */}
                 <Box
                   sx={{
@@ -286,7 +306,7 @@ const ARMarkerOverlay: React.FC<ARMarkerOverlayProps> = ({
                   >
                     {marker.properties.name}
                   </Typography>
-                  
+
                   {/* Indicador de distância - Estilo melhorado */}
                   <Box
                     sx={{
@@ -299,11 +319,11 @@ const ARMarkerOverlay: React.FC<ARMarkerOverlayProps> = ({
                       opacity: 0.85,
                     }}
                   >
-                    <ExploreIcon 
-                      sx={{ 
+                    <ExploreIcon
+                      sx={{
                         fontSize: isTablet ? '0.9rem' : '0.8rem',
                         color: alpha(markerColor, 0.9),
-                      }} 
+                      }}
                     />
                     <span>{formattedDistance}</span>
                   </Box>

@@ -12,16 +12,20 @@ const addMobileMetaTags = () => {
     mobileCapableMeta.name = 'mobile-web-app-capable';
     mobileCapableMeta.content = 'yes';
     document.head.appendChild(mobileCapableMeta);
-    
+
     // Ensure proper viewport settings for AR
-    const viewportMeta = document.querySelector('meta[name="viewport"]') as HTMLMetaElement | null;
+    const viewportMeta = document.querySelector(
+      'meta[name="viewport"]',
+    ) as HTMLMetaElement | null;
     if (!viewportMeta) {
       const newViewportMeta = document.createElement('meta');
       newViewportMeta.name = 'viewport';
-      newViewportMeta.content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui';
+      newViewportMeta.content =
+        'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui';
       document.head.appendChild(newViewportMeta);
     } else {
-      viewportMeta.content = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui';
+      viewportMeta.content =
+        'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, minimal-ui';
     }
   }
 };
@@ -37,12 +41,12 @@ const ARViewRoute = () => {
   useEffect(() => {
     // Add mobile meta tags first
     addMobileMetaTags();
-    
+
     // Then set up AR.js with a small delay to ensure A-Frame is loaded
     const initTimeout = setTimeout(() => {
       setupARJS();
     }, 100);
-    
+
     return () => clearTimeout(initTimeout);
   }, []);
 

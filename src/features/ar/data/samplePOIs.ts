@@ -96,81 +96,86 @@ export const generateSamplePOIs = (
   const generateDistributedMarkers = (): Marker[] => {
     const markers: Marker[] = [];
     const usedCategories: Set<string> = new Set();
-    
+
     // Total reduzido de POIs
     const TOTAL_POIS = 7;
-    
+
     // Categorias que já foram usadas para marcadores próximos
     const nearbyUsedCategories: Set<string> = new Set();
-    
+
     // Gerar POIs com diferentes distâncias
     for (let i = 0; i < TOTAL_POIS; i++) {
       // Distribuir pontos em círculo ao redor do usuário
       // Ângulo distribuído uniformemente (divide o círculo em partes iguais)
-      const angle = (i * (2 * Math.PI) / TOTAL_POIS) + (Math.random() * 0.2 - 0.1);
-      
+      const angle =
+        (i * (2 * Math.PI)) / TOTAL_POIS + (Math.random() * 0.2 - 0.1);
+
       // Determine a distância baseada na posição
       // Alguns pontos próximos, outros médios, outros distantes
       let distanceMeters: number;
-      
-      if (i % 3 === 0) { 
+
+      if (i % 3 === 0) {
         // Próximo (50-150m)
         distanceMeters = 50 + Math.random() * 100;
-      } else if (i % 3 === 1) { 
+      } else if (i % 3 === 1) {
         // Médio (150-300m)
         distanceMeters = 150 + Math.random() * 150;
-      } else { 
+      } else {
         // Distante (300-450m)
         distanceMeters = 300 + Math.random() * 150;
       }
-      
+
       // Adiciona pequena variação aleatória à distância
-      distanceMeters *= (0.9 + Math.random() * 0.2);
-      
+      distanceMeters *= 0.9 + Math.random() * 0.2;
+
       // Conversão para graus
       const distanceDegrees = distanceMeters / 111000;
-      
+
       // Calcula deslocamento
       const latOffset = distanceDegrees * Math.cos(angle);
-      const lngOffset = distanceDegrees * Math.sin(angle) / Math.cos((centerLat * Math.PI) / 180);
-      
+      const lngOffset =
+        (distanceDegrees * Math.sin(angle)) /
+        Math.cos((centerLat * Math.PI) / 180);
+
       // Posição final
       const lat = centerLat + latOffset;
       const lng = centerLng + lngOffset;
-      
+
       // Seleção de categoria - garantindo diversidade
       // Para POIs próximos, garantir categorias diferentes
       let category: string;
-      
+
       if (distanceMeters < 200) {
         // Para POIs próximos, nunca usar a mesma categoria
         do {
           category = categories[Math.floor(Math.random() * categories.length)];
         } while (nearbyUsedCategories.has(category));
-        
+
         nearbyUsedCategories.add(category);
       } else {
         // Para POIs distantes, tentar não repetir categorias se possível
         if (usedCategories.size < categories.length) {
           do {
-            category = categories[Math.floor(Math.random() * categories.length)];
+            category =
+              categories[Math.floor(Math.random() * categories.length)];
           } while (usedCategories.has(category));
         } else {
           // Se já usamos todas as categorias, escolhe qualquer uma
           category = categories[Math.floor(Math.random() * categories.length)];
         }
       }
-      
+
       usedCategories.add(category);
-      
+
       // Nome aleatório da categoria
       const categoryNames = names[category] || names['restaurante'];
       const nameIndex = Math.floor(Math.random() * categoryNames.length);
       const name = categoryNames[nameIndex];
-      
+
       // Descrição aleatória
-      const description = descriptions[Math.floor(Math.random() * descriptions.length)];
-      
+      const description =
+        descriptions[Math.floor(Math.random() * descriptions.length)];
+
       // Adiciona o marcador
       markers.push({
         id: (i + 1).toString(),
@@ -187,7 +192,7 @@ export const generateSamplePOIs = (
         },
       });
     }
-    
+
     return markers;
   };
 

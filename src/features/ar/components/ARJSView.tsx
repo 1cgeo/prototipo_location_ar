@@ -25,73 +25,88 @@ const ARJSView: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showCameraError, setShowCameraError] = useState(false);
-  const [cameraErrorDetails, setCameraErrorDetails] = useState<string>("");
+  const [cameraErrorDetails, setCameraErrorDetails] = useState<string>('');
   const [showMarkerMessage, setShowMarkerMessage] = useState(false);
   const [permissionsGranted, setPermissionsGranted] = useState(false);
   const { orientation, dimensions } = useScreenOrientation();
 
   // Get data from store
-  const { 
+  const {
     coordinates,
     heading,
-    selectedMarkerId, 
-    markersGenerated, 
+    selectedMarkerId,
+    markersGenerated,
     allMarkers,
     visibleMarkers,
     setCoordinates,
     setHeading,
     selectMarker,
     generateMarkersAtLocation,
-    updateVisibleMarkers
+    updateVisibleMarkers,
   } = useARStore();
 
   // Initialize location tracking
   useEffect(() => {
     if (!navigator.geolocation) {
-      setErrorMessage("Geolocation is not supported by your browser");
+      setErrorMessage('Geolocation is not supported by your browser');
       return;
     }
 
     const watchId = navigator.geolocation.watchPosition(
-      (position) => {
+      position => {
         setCoordinates(
           position.coords.latitude,
           position.coords.longitude,
-          position.coords.accuracy
+          position.coords.accuracy,
         );
         setPermissionsGranted(true);
-        
+
         // Generate markers if not already generated
-        if (!markersGenerated && position.coords.latitude && position.coords.longitude) {
-          generateMarkersAtLocation(position.coords.latitude, position.coords.longitude);
+        if (
+          !markersGenerated &&
+          position.coords.latitude &&
+          position.coords.longitude
+        ) {
+          generateMarkersAtLocation(
+            position.coords.latitude,
+            position.coords.longitude,
+          );
         } else {
           // Atualiza as distâncias em tempo real quando o usuário se move
           updateVisibleMarkers();
         }
       },
-      (error) => {
-        let message = "Location error";
-        
-        if (error.code === 1) { // PERMISSION_DENIED
-          message = "Location permission denied";
+      error => {
+        let message = 'Location error';
+
+        if (error.code === 1) {
+          // PERMISSION_DENIED
+          message = 'Location permission denied';
           setPermissionsGranted(false);
-        } else if (error.code === 2) { // POSITION_UNAVAILABLE
-          message = "Location unavailable";
-        } else if (error.code === 3) { // TIMEOUT
-          message = "Location request timed out";
+        } else if (error.code === 2) {
+          // POSITION_UNAVAILABLE
+          message = 'Location unavailable';
+        } else if (error.code === 3) {
+          // TIMEOUT
+          message = 'Location request timed out';
         }
-        
+
         setErrorMessage(message);
       },
       {
         enableHighAccuracy: true,
         maximumAge: 0,
-        timeout: 10000
-      }
+        timeout: 10000,
+      },
     );
-    
+
     return () => navigator.geolocation.clearWatch(watchId);
-  }, [markersGenerated, setCoordinates, generateMarkersAtLocation, updateVisibleMarkers]);
+  }, [
+    markersGenerated,
+    setCoordinates,
+    generateMarkersAtLocation,
+    updateVisibleMarkers,
+  ]);
 
   // Handle device orientation for heading - INVERTIDO NOVAMENTE PARA CORRIGIR DIREÇÃO
   useEffect(() => {
@@ -104,7 +119,7 @@ const ARJSView: React.FC = () => {
     };
 
     window.addEventListener('deviceorientation', handleOrientation, true);
-    
+
     return () => {
       window.removeEventListener('deviceorientation', handleOrientation, true);
     };
@@ -115,14 +130,15 @@ const ARJSView: React.FC = () => {
     // Helper to capture camera errors from A-Frame/AR.js
     const handleCameraError = (error: ErrorEvent) => {
       // Check if it's a camera-related error from AR.js
-      if (error.message && (
-          error.message.includes('camera') || 
-          error.message.includes('video') || 
+      if (
+        error.message &&
+        (error.message.includes('camera') ||
+          error.message.includes('video') ||
           error.message.includes('getUserMedia') ||
-          error.message.includes('NotReadableError')
-        )) {
+          error.message.includes('NotReadableError'))
+      ) {
         console.error('Camera error detected:', error);
-        setCameraErrorDetails(error.message || "Camera access error");
+        setCameraErrorDetails(error.message || 'Camera access error');
         setShowCameraError(true);
         setIsLoading(false);
       }
@@ -130,14 +146,16 @@ const ARJSView: React.FC = () => {
 
     // Listen for AR.js specific errors
     window.addEventListener('error', handleCameraError);
-    
+
     // Also set up a specific handler for A-Frame's camera errors
     if (typeof window !== 'undefined' && window.AFRAME) {
       const onArError = (ev: any) => {
         if (ev.detail && ev.detail.error) {
-          handleCameraError(new ErrorEvent('error', {
-            message: `AR.js: ${ev.detail.error}`
-          }));
+          handleCameraError(
+            new ErrorEvent('error', {
+              message: `AR.js: ${ev.detail.error}`,
+            }),
+          );
         }
       };
       document.addEventListener('ar-camera-error', onArError);
@@ -146,7 +164,7 @@ const ARJSView: React.FC = () => {
         document.removeEventListener('ar-camera-error', onArError);
       };
     }
-    
+
     return () => {
       window.removeEventListener('error', handleCameraError);
     };
@@ -156,9 +174,9 @@ const ARJSView: React.FC = () => {
   useEffect(() => {
     // Bridge between React and AR.js
     window.arjsEventHandlers = {
-      onMarkerSelect: (markerId) => {
+      onMarkerSelect: markerId => {
         selectMarker(markerId);
-      }
+      },
     };
 
     return () => {
@@ -169,10 +187,10 @@ const ARJSView: React.FC = () => {
   // Handle camera permissions
   const requestCameraPermission = async () => {
     try {
-      await navigator.mediaDevices.getUserMedia({ 
+      await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: 'environment' // Prefer back camera
-        } 
+          facingMode: 'environment', // Prefer back camera
+        },
       });
       setPermissionsGranted(true);
       setIsLoading(false);
@@ -180,7 +198,7 @@ const ARJSView: React.FC = () => {
     } catch (error) {
       console.error('Camera permission error:', error);
       setPermissionsGranted(false);
-      setErrorMessage("Camera permission denied");
+      setErrorMessage('Camera permission denied');
       if (error instanceof Error) {
         setCameraErrorDetails(error.message);
       }
@@ -191,7 +209,7 @@ const ARJSView: React.FC = () => {
   const retryCameraAccess = async () => {
     setShowCameraError(false);
     setIsLoading(true);
-    
+
     // Release camera if possible before retrying
     try {
       const tracks = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -199,7 +217,7 @@ const ARJSView: React.FC = () => {
     } catch (e) {
       // Ignore errors here, just trying to release the camera
     }
-    
+
     // Wait a moment and retry
     setTimeout(() => {
       requestCameraPermission();
@@ -226,7 +244,7 @@ const ARJSView: React.FC = () => {
         setIsLoading(false);
         updateVisibleMarkers();
       }, 2000);
-      
+
       return () => clearTimeout(timer);
     }
   }, [sceneRef, updateVisibleMarkers]);
@@ -257,7 +275,14 @@ const ARJSView: React.FC = () => {
 
   return (
     <ErrorBoundary>
-      <Box sx={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
+      <Box
+        sx={{
+          position: 'relative',
+          width: '100%',
+          height: '100%',
+          overflow: 'hidden',
+        }}
+      >
         {/* RESTAURADA A CONFIGURAÇÃO ORIGINAL DO SCENE */}
         <Scene
           ref={sceneRef}
@@ -276,8 +301,8 @@ const ARJSView: React.FC = () => {
             displayHeight: dimensions.height,
           }}
           vr-mode-ui={{ enabled: false }}
-          renderer={{ 
-            logarithmicDepthBuffer: true, 
+          renderer={{
+            logarithmicDepthBuffer: true,
             alpha: true,
           }}
           style={{
@@ -290,56 +315,61 @@ const ARJSView: React.FC = () => {
           }}
         >
           {/* Camera - configuração original */}
-          <Entity 
-            primitive="a-camera" 
-            gps-camera={{ 
-              simulateLatitude: coordinates.latitude, 
+          <Entity
+            primitive="a-camera"
+            gps-camera={{
+              simulateLatitude: coordinates.latitude,
               simulateLongitude: coordinates.longitude,
               gpsMinDistance: 5,
-              gpsTimeInterval: 1000
-            }} 
+              gpsTimeInterval: 1000,
+            }}
           />
 
           {/* AR content - POI markers */}
-          {markersGenerated && coordinates.latitude && coordinates.longitude && allMarkers.map(marker => {
-            const [lng, lat] = marker.geometry.coordinates;
-            // Only create entities for markers in the current visible list
-            const isVisible = visibleMarkers.some(visibleMarker => visibleMarker.id === marker.id);
-            
-            if (!isVisible) return null;
-            
-            return (
-              <Entity
-                key={marker.id}
-                primitive="a-box"
-                gps-entity-place={`latitude: ${lat}; longitude: ${lng};`}
-                material={{ color: '#2196f3' }}
-                position={{ x: 0, y: 0, z: 0 }}
-                scale={{ x: 0.5, y: 0.5, z: 0.5 }}
-                look-at="[gps-camera]"
-                animation__click={{ 
-                  property: 'scale', 
-                  startEvents: 'click', 
-                  easing: 'easeInCubic', 
-                  dur: 150, 
-                  from: '0.5 0.5 0.5', 
-                  to: '1 1 1' 
-                }}
-                animation__clickend={{ 
-                  property: 'scale', 
-                  startEvents: 'mouseup', 
-                  easing: 'easeOutCubic', 
-                  dur: 150, 
-                  from: '1 1 1', 
-                  to: '0.5 0.5 0.5' 
-                }}
-                gps-entity-click-handler
-                data-marker-id={marker.id}
-                data-marker-name={marker.properties.name}
-                data-marker-category={marker.properties.category}
-              />
-            );
-          })}
+          {markersGenerated &&
+            coordinates.latitude &&
+            coordinates.longitude &&
+            allMarkers.map(marker => {
+              const [lng, lat] = marker.geometry.coordinates;
+              // Only create entities for markers in the current visible list
+              const isVisible = visibleMarkers.some(
+                visibleMarker => visibleMarker.id === marker.id,
+              );
+
+              if (!isVisible) return null;
+
+              return (
+                <Entity
+                  key={marker.id}
+                  primitive="a-box"
+                  gps-entity-place={`latitude: ${lat}; longitude: ${lng};`}
+                  material={{ color: '#2196f3' }}
+                  position={{ x: 0, y: 0, z: 0 }}
+                  scale={{ x: 0.5, y: 0.5, z: 0.5 }}
+                  look-at="[gps-camera]"
+                  animation__click={{
+                    property: 'scale',
+                    startEvents: 'click',
+                    easing: 'easeInCubic',
+                    dur: 150,
+                    from: '0.5 0.5 0.5',
+                    to: '1 1 1',
+                  }}
+                  animation__clickend={{
+                    property: 'scale',
+                    startEvents: 'mouseup',
+                    easing: 'easeOutCubic',
+                    dur: 150,
+                    from: '1 1 1',
+                    to: '0.5 0.5 0.5',
+                  }}
+                  gps-entity-click-handler
+                  data-marker-id={marker.id}
+                  data-marker-name={marker.properties.name}
+                  data-marker-category={marker.properties.category}
+                />
+              );
+            })}
         </Scene>
 
         {/* Compass indicator - only show when no marker is selected */}
@@ -352,7 +382,7 @@ const ARJSView: React.FC = () => {
 
         {/* Marker UI Overlay - Only show when no marker is selected */}
         {!selectedMarkerId && (
-          <ARMarkerOverlay 
+          <ARMarkerOverlay
             markers={visibleMarkers}
             orientation={orientation}
             dimensions={dimensions}
@@ -374,22 +404,24 @@ const ARJSView: React.FC = () => {
               p: 2,
             }}
             BackdropProps={{
-              sx: { backgroundColor: 'rgba(0,0,0,0.5)' }
+              sx: { backgroundColor: 'rgba(0,0,0,0.5)' },
             }}
           >
             <Box
               sx={{
-                width: orientation === 'landscape' 
-                  ? (dimensions.width >= 768 ? '40%' : '60%')
-                  : (dimensions.width >= 768 ? '70%' : '90%'),
+                width:
+                  orientation === 'landscape'
+                    ? dimensions.width >= 768
+                      ? '40%'
+                      : '60%'
+                    : dimensions.width >= 768
+                      ? '70%'
+                      : '90%',
                 maxWidth: 500,
                 outline: 'none',
               }}
             >
-              <ARJSOverlay
-                orientation={orientation}
-                dimensions={dimensions}
-              />
+              <ARJSOverlay orientation={orientation} dimensions={dimensions} />
             </Box>
           </Modal>
         )}
@@ -401,8 +433,8 @@ const ARJSView: React.FC = () => {
           onClose={() => setShowMarkerMessage(false)}
           anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
         >
-          <Alert 
-            severity="success" 
+          <Alert
+            severity="success"
             icon={<LocationOnIcon />}
             sx={{ width: '100%' }}
           >
@@ -421,51 +453,56 @@ const ARJSView: React.FC = () => {
           onClose={() => setShowCameraError(false)}
           aria-labelledby="camera-error-dialog"
         >
-          <Box sx={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            width: '85%',
-            maxWidth: 400,
-            bgcolor: 'background.paper',
-            borderRadius: 2,
-            boxShadow: 24,
-            p: 3,
-          }}>
+          <Box
+            sx={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '85%',
+              maxWidth: 400,
+              bgcolor: 'background.paper',
+              borderRadius: 2,
+              boxShadow: 24,
+              p: 3,
+            }}
+          >
             <Typography variant="h6" component="h2" sx={{ mb: 2 }}>
               Erro de Câmera
             </Typography>
             <Typography variant="body2" sx={{ mb: 2 }}>
-              {cameraErrorDetails || "Não foi possível iniciar a câmera"}
+              {cameraErrorDetails || 'Não foi possível iniciar a câmera'}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Isso pode acontecer se outro aplicativo estiver usando sua câmera ou se as permissões foram negadas.
+              Isso pode acontecer se outro aplicativo estiver usando sua câmera
+              ou se as permissões foram negadas.
             </Typography>
-            <Box sx={{ mt: 2, display: 'flex', justifyContent: 'space-between' }}>
+            <Box
+              sx={{ mt: 2, display: 'flex', justifyContent: 'space-between' }}
+            >
               <Box sx={{ flex: 1 }} />
               <Box sx={{ display: 'flex', gap: 2 }}>
-                <Box 
+                <Box
                   onClick={() => setShowCameraError(false)}
-                  sx={{ 
+                  sx={{
                     color: 'primary.main',
                     cursor: 'pointer',
                     fontWeight: 500,
-                    p: 1
+                    p: 1,
                   }}
                 >
                   Ignorar
                 </Box>
-                <Box 
+                <Box
                   onClick={retryCameraAccess}
-                  sx={{ 
+                  sx={{
                     bgcolor: 'primary.main',
                     color: 'white',
                     px: 2,
                     py: 1,
                     borderRadius: 1,
                     cursor: 'pointer',
-                    fontWeight: 500
+                    fontWeight: 500,
                   }}
                 >
                   Tentar Novamente
