@@ -16,6 +16,7 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import ExploreIcon from '@mui/icons-material/Explore';
 import NavigationIcon from '@mui/icons-material/Navigation';
+import HeightIcon from '@mui/icons-material/Height';
 import RestaurantIcon from '@mui/icons-material/Restaurant';
 import StoreIcon from '@mui/icons-material/Store';
 import MuseumIcon from '@mui/icons-material/Museum';
@@ -24,9 +25,15 @@ import LocalCafeIcon from '@mui/icons-material/LocalCafe';
 import TheaterComedyIcon from '@mui/icons-material/TheaterComedy';
 import DirectionsSubwayIcon from '@mui/icons-material/DirectionsSubway';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import { MarkerWithDistance } from '../schemas/markerSchema';
 import { useARStore } from '../stores/arStore';
-import { formatDistance, azimuthToCardinal } from '../utils/arjsUtils';
+import {
+  formatDistance,
+  azimuthToCardinal,
+  formatAltitude,
+} from '../utils/arjsUtils';
 
 interface InfoCardProps {
   marker: MarkerWithDistance;
@@ -66,15 +73,29 @@ const InfoCard: React.FC<InfoCardProps> = ({
   isTablet,
 }) => {
   const theme = useTheme();
-  const { selectMarker } = useARStore();
+  const { selectMarker, coordinates } = useARStore();
 
   // Extrai dados do marcador
   const { name, category, description } = marker.properties;
+  // Access altitude directly without destructuring unused lng/lat
+  const altitude = marker.geometry.coordinates[2] || 0;
   const distance = formatDistance(marker.distance);
   const azimuth = Math.round(marker.bearing);
   const cardinalDirection = azimuthToCardinal(marker.bearing);
   const categoryLabel = CATEGORY_TRANSLATIONS[category] || category;
   const categoryColor = CATEGORY_COLORS[category] || CATEGORY_COLORS.default;
+
+  // Calcula a diferença de altitude entre o usuário e o marcador
+  const userAltitude = coordinates.altitude || 0;
+  const altitudeDifference = altitude - userAltitude;
+  const formattedAltitude = formatAltitude(altitudeDifference);
+
+  // Determina o ícone de altitude com base na diferença
+  const getAltitudeIcon = () => {
+    if (altitudeDifference > 5) return <KeyboardArrowUpIcon />;
+    if (altitudeDifference < -5) return <KeyboardArrowDownIcon />;
+    return <HeightIcon />;
+  };
 
   // Obtem ícone para categoria
   const getCategoryIcon = (category: string) => {
@@ -102,6 +123,18 @@ const InfoCard: React.FC<InfoCardProps> = ({
   const handleClose = (event: React.MouseEvent) => {
     event.stopPropagation();
     selectMarker(null);
+  };
+
+  // Formata o texto vertical angle
+  const getVerticalDirectionText = () => {
+    if (!marker.verticalAngle) return '';
+
+    const angle = Math.round(marker.verticalAngle);
+    if (angle > 30) return `${angle}° (acima)`;
+    if (angle < -30) return `${angle}° (abaixo)`;
+    if (angle > 10) return `${angle}° (ligeiramente acima)`;
+    if (angle < -10) return `${angle}° (ligeiramente abaixo)`;
+    return `${angle}° (mesmo nível)`;
   };
 
   return (
@@ -173,7 +206,7 @@ const InfoCard: React.FC<InfoCardProps> = ({
       />
 
       <CardContent sx={{ pt: 2 }}>
-        {/* Distância e direção */}
+        {/* Distance, direction and altitude */}
         <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
           <Chip
             icon={<ExploreIcon />}
@@ -190,6 +223,20 @@ const InfoCard: React.FC<InfoCardProps> = ({
             label={`${azimuth}° ${cardinalDirection}`}
             size={isTablet ? 'medium' : 'small'}
             variant="outlined"
+            sx={{ borderRadius: 4 }}
+          />
+
+          <Chip
+            icon={getAltitudeIcon()}
+            label={formattedAltitude}
+            size={isTablet ? 'medium' : 'small'}
+            color={
+              altitudeDifference > 10
+                ? 'success'
+                : altitudeDifference < -10
+                  ? 'error'
+                  : 'default'
+            }
             sx={{ borderRadius: 4 }}
           />
         </Box>
@@ -209,6 +256,52 @@ const InfoCard: React.FC<InfoCardProps> = ({
         >
           {description || 'Sem descrição disponível.'}
         </Typography>
+
+        {/* 3D Position Information */}
+        <Box
+          sx={{
+            mt: 2,
+            mb: 2,
+            p: 2,
+            borderRadius: 2,
+            border: `1px solid ${alpha(theme.palette.divider, 0.2)}`,
+            backgroundColor: alpha(theme.palette.background.default, 0.3),
+          }}
+        >
+          <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 1 }}>
+            Posição 3D
+          </Typography>
+
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+            <Typography variant="body2">Distância:</Typography>
+            <Typography variant="body2" fontWeight="medium">
+              {distance}
+            </Typography>
+          </Box>
+
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+            <Typography variant="body2">Direção horizontal:</Typography>
+            <Typography variant="body2" fontWeight="medium">
+              {azimuth}° {cardinalDirection}
+            </Typography>
+          </Box>
+
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+            <Typography variant="body2">Altitude relativa:</Typography>
+            <Typography variant="body2" fontWeight="medium">
+              {formattedAltitude}
+            </Typography>
+          </Box>
+
+          {marker.verticalAngle !== undefined && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Typography variant="body2">Ângulo vertical:</Typography>
+              <Typography variant="body2" fontWeight="medium">
+                {getVerticalDirectionText()}
+              </Typography>
+            </Box>
+          )}
+        </Box>
 
         {/* Direção - Estilo melhorado */}
         <Box

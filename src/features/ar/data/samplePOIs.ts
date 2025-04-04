@@ -3,7 +3,7 @@ import { MarkersCollection, Marker } from '../schemas/markerSchema';
 
 /**
  * Gera pontos de interesse aleatórios ao redor de uma localização
- * Versão melhorada com menos POIs, categorias diversas e diferentes distâncias
+ * Versão melhorada com menos POIs, categorias diversas, diferentes distâncias e altitudes
  *
  * @param centerLat Latitude central (localização atual do usuário)
  * @param centerLng Longitude central (localização atual do usuário)
@@ -90,8 +90,8 @@ export const generateSamplePOIs = (
   ];
 
   /**
-   * Gera marcadores distribuídos em diferentes distâncias e direções
-   * Versão melhorada com menor número de POIs e melhor distribuição
+   * Gera marcadores distribuídos em diferentes distâncias, direções e altitudes
+   * Versão melhorada com menor número de POIs e melhor distribuição em 3D
    */
   const generateDistributedMarkers = (): Marker[] => {
     const markers: Marker[] = [];
@@ -141,6 +141,53 @@ export const generateSamplePOIs = (
       const lat = centerLat + latOffset;
       const lng = centerLng + lngOffset;
 
+      // Determina a altitude baseada na categoria e distância
+      let altitude: number;
+
+      switch (i % 7) {
+        case 0: // No chão
+          altitude = 0;
+          break;
+        case 1: // Primeira andar (3-6m)
+          altitude = 3 + Math.random() * 3;
+          break;
+        case 2: // Segundo andar (6-12m)
+          altitude = 6 + Math.random() * 6;
+          break;
+        case 3: // Prédio baixo (12-30m)
+          altitude = 12 + Math.random() * 18;
+          break;
+        case 4: // Prédio médio (30-60m)
+          altitude = 30 + Math.random() * 30;
+          break;
+        case 5: // Prédio alto (60-120m)
+          altitude = 60 + Math.random() * 60;
+          break;
+        default: // Nível do chão com variação pequena
+          altitude = Math.random() * 2;
+      }
+
+      // Ajusta a altitude com base na categoria
+      if (
+        ['restaurante', 'cafeteria', 'loja'].includes(
+          categories[i % categories.length],
+        )
+      ) {
+        // Estes tendem a estar em andares mais baixos
+        altitude = Math.min(altitude, 30);
+      } else if (
+        ['atracao', 'teatro'].includes(categories[i % categories.length])
+      ) {
+        // Estes podem estar em alturas variadas
+        altitude = altitude;
+      } else if (['servico'].includes(categories[i % categories.length])) {
+        // Serviços tendem a estar em andares médios de prédios
+        altitude = Math.min(Math.max(altitude, 3), 60);
+      } else if (['transporte'].includes(categories[i % categories.length])) {
+        // Transporte geralmente no chão ou subterrâneo
+        altitude = Math.max(altitude - 10, -5);
+      }
+
       // Seleção de categoria - garantindo diversidade
       // Para POIs próximos, garantir categorias diferentes
       let category: string;
@@ -176,19 +223,20 @@ export const generateSamplePOIs = (
       const description =
         descriptions[Math.floor(Math.random() * descriptions.length)];
 
-      // Adiciona o marcador
+      // Adiciona o marcador com coordenadas 3D
       markers.push({
         id: (i + 1).toString(),
         type: 'Feature',
         geometry: {
           type: 'Point',
-          coordinates: [lng, lat],
+          coordinates: [lng, lat, altitude],
         },
         properties: {
           name,
           category,
           description,
           icon: category,
+          altitude: altitude, // Adicionamos também nas propriedades para fácil acesso
         },
       });
     }

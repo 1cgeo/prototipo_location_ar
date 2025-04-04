@@ -71,13 +71,16 @@ export function setupARJS() {
 }
 
 /**
- * Calculates distance between two coordinates using Haversine formula
+ * Calculates distance between two coordinates using Haversine formula and altitude difference
+ * Updated to handle 3D distance with altitude
  */
 export function calculateDistance(
   lat1: number,
   lng1: number,
   lat2: number,
   lng2: number,
+  alt1: number = 0,
+  alt2: number = 0,
 ): number {
   if (isNaN(lat1) || isNaN(lng1) || isNaN(lat2) || isNaN(lng2)) {
     return Infinity;
@@ -94,7 +97,14 @@ export function calculateDistance(
     Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
-  return R * c;
+  // 2D distance (on the earth's surface)
+  const distance2D = R * c;
+
+  // Altitude difference
+  const altDiff = alt2 - alt1;
+
+  // 3D distance (using Pythagorean theorem)
+  return Math.sqrt(distance2D * distance2D + altDiff * altDiff);
 }
 
 /**
@@ -122,6 +132,22 @@ export function calculateBearing(
 
   const θ = Math.atan2(y, x);
   return ((θ * 180) / Math.PI + 360) % 360;
+}
+
+/**
+ * Calculates vertical angle to a marker (elevation angle)
+ * Positive for markers above the user, negative for below
+ */
+export function calculateVerticalAngle(
+  userAlt: number,
+  markerAlt: number,
+  distance2D: number,
+): number {
+  if (distance2D === 0) return 90; // Directly above/below
+
+  const altDiff = markerAlt - userAlt;
+  // Calculate elevation angle in degrees
+  return Math.atan2(altDiff, distance2D) * (180 / Math.PI);
 }
 
 /**
@@ -159,6 +185,14 @@ export function formatDistance(distanceInMeters: number): string {
 }
 
 /**
+ * Formats altitude with appropriate sign and unit
+ */
+export function formatAltitude(altitudeInMeters: number): string {
+  const sign = altitudeInMeters >= 0 ? '+' : '';
+  return `${sign}${Math.round(altitudeInMeters)}m`;
+}
+
+/**
  * Converts azimuth (degrees) to cardinal direction
  * Ajustado para direção correta da bússola
  */
@@ -170,31 +204,56 @@ export function azimuthToCardinal(azimuth: number): string {
 
 /**
  * Process markers to add distance and bearing information
+ * Updated to handle altitude
  */
 export function processMarkers(
   markers: Marker[],
   userLat: number,
   userLng: number,
+  userAlt: number = 0,
 ): MarkerWithDistance[] {
   if (!userLat || !userLng || !markers?.length) {
     return [];
   }
 
+  // Using a type assertion to fix the filtering issue
   return markers
-    .filter(marker => marker?.geometry?.coordinates?.length === 2)
+    .filter(marker => marker?.geometry?.coordinates?.length >= 2)
     .map(marker => {
       try {
-        const [lng, lat] = marker.geometry.coordinates;
+        // Extract coordinates
+        const [lng, lat, altitude = 0] = marker.geometry.coordinates;
 
-        // Calculate distance and bearing
-        const distance = calculateDistance(userLat, userLng, lat, lng);
+        // Calculate 2D distance and bearing
+        const distance2D = calculateDistance(userLat, userLng, lat, lng);
         const bearing = calculateBearing(userLat, userLng, lat, lng);
 
-        return {
+        // Calculate 3D distance including altitude
+        const distance3D = calculateDistance(
+          userLat,
+          userLng,
+          lat,
+          lng,
+          userAlt,
+          altitude,
+        );
+
+        // Calculate vertical angle (elevation)
+        const verticalAngle = calculateVerticalAngle(
+          userAlt,
+          altitude,
+          distance2D,
+        );
+
+        // Create a properly typed MarkerWithDistance object
+        const markerWithDistance: MarkerWithDistance = {
           ...marker,
-          distance,
+          distance: distance3D,
           bearing,
+          verticalAngle,
         };
+
+        return markerWithDistance;
       } catch (error) {
         return null;
       }

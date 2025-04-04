@@ -17,7 +17,7 @@ import { useScreenOrientation } from '../hooks/useScreenOrientation';
 
 /**
  * AR.js View component for location-based AR
- * Versão simplificada
+ * Enhanced version with altitude support
  */
 const ARJSView: React.FC = () => {
   // Using RefObject<any> as a workaround for the Scene component ref
@@ -28,6 +28,7 @@ const ARJSView: React.FC = () => {
   const [cameraErrorDetails, setCameraErrorDetails] = useState<string>('');
   const [showMarkerMessage, setShowMarkerMessage] = useState(false);
   const [permissionsGranted, setPermissionsGranted] = useState(false);
+  const [permissionsChecked, setPermissionsChecked] = useState(false);
   const { orientation, dimensions } = useScreenOrientation();
 
   // Get data from store
@@ -45,21 +46,140 @@ const ARJSView: React.FC = () => {
     updateVisibleMarkers,
   } = useARStore();
 
-  // Initialize location tracking
+  // Referências para o filtro de suavização da bússola
+  const headingHistoryRef = useRef<number[]>([]);
+  const lastValidHeadingRef = useRef<number | null>(null);
+  const deviceOrientationRef = useRef<{ beta: number | null; gamma: number | null }>({
+    beta: null,
+    gamma: null,
+  });
+  const lastHeadingTimestampRef = useRef<number>(0);
+
+  // Proactively check permissions on component mount
   useEffect(() => {
-    if (!navigator.geolocation) {
-      setErrorMessage('Geolocation is not supported by your browser');
+    async function checkExistingPermissions() {
+      try {
+        // Check for camera permission
+        let cameraPermitted = false;
+        let locationPermitted = false;
+
+        // First try to get camera access directly - this will either use existing permissions
+        // or prompt the user if permissions haven't been granted yet
+        try {
+          const cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' },
+          });
+          // If we get here, camera permission is granted
+          cameraPermitted = true;
+
+          // Release the camera stream immediately since we're just checking permissions
+          cameraStream.getTracks().forEach(track => track.stop());
+        } catch (err) {
+          console.log('Camera permission not granted:', err);
+          cameraPermitted = false;
+        }
+
+        // Check location permission by trying to get the position
+        try {
+          // Use getCurrentPosition instead of watchPosition for initial check
+          const position = await new Promise<GeolocationPosition>(
+            (resolve, reject) => {
+              navigator.geolocation.getCurrentPosition(resolve, reject, {
+                enableHighAccuracy: true,
+                timeout: 5000,
+                maximumAge: 0,
+              });
+            },
+          );
+
+          locationPermitted = true;
+
+          // If we got a position, we can also set the coordinates
+          const altitude =
+            position.coords.altitude !== null ? position.coords.altitude : 0;
+          setCoordinates(
+            position.coords.latitude,
+            position.coords.longitude,
+            position.coords.accuracy,
+            altitude,
+          );
+
+          // Generate markers if this is the first time we're getting location
+          if (
+            !markersGenerated &&
+            position.coords.latitude &&
+            position.coords.longitude
+          ) {
+            generateMarkersAtLocation(
+              position.coords.latitude,
+              position.coords.longitude,
+              altitude,
+            );
+          }
+        } catch (err) {
+          console.log('Location permission not granted:', err);
+          locationPermitted = false;
+        }
+
+        // Set permissions state based on checks
+        setPermissionsGranted(cameraPermitted && locationPermitted);
+        setPermissionsChecked(true);
+
+        // If both permissions are granted, we can start initializing the AR experience
+        if (cameraPermitted && locationPermitted) {
+          setIsLoading(true);
+          // Allow a short delay to ensure UI updates before initializing AR
+          setTimeout(() => {
+            initializeAR();
+          }, 500);
+        } else {
+          setIsLoading(false);
+        }
+      } catch (err) {
+        console.error('Error checking permissions:', err);
+        setPermissionsChecked(true);
+        setIsLoading(false);
+      }
+    }
+
+    checkExistingPermissions();
+  }, []);
+
+  // Initialize AR experience
+  const initializeAR = () => {
+    setIsLoading(true);
+    // Setup global communication bridge with AR.js
+    window.arjsEventHandlers = {
+      onMarkerSelect: (markerId: string) => {
+        selectMarker(markerId);
+      },
+    };
+
+    // Set a timeout to ensure AR.js has time to initialize
+    setTimeout(() => {
+      setIsLoading(false);
+      updateVisibleMarkers();
+    }, 2000);
+  };
+
+  // Setup continuous location tracking once permissions are granted
+  useEffect(() => {
+    if (!permissionsGranted || !navigator.geolocation) {
       return;
     }
 
     const watchId = navigator.geolocation.watchPosition(
       position => {
+        // Get altitude if available, otherwise use 0
+        const altitude =
+          position.coords.altitude !== null ? position.coords.altitude : 0;
+
         setCoordinates(
           position.coords.latitude,
           position.coords.longitude,
           position.coords.accuracy,
+          altitude,
         );
-        setPermissionsGranted(true);
 
         // Generate markers if not already generated
         if (
@@ -70,9 +190,10 @@ const ARJSView: React.FC = () => {
           generateMarkersAtLocation(
             position.coords.latitude,
             position.coords.longitude,
+            altitude,
           );
         } else {
-          // Atualiza as distâncias em tempo real quando o usuário se move
+          // Update distances in real-time as the user moves
           updateVisibleMarkers();
         }
       },
@@ -102,19 +223,145 @@ const ARJSView: React.FC = () => {
 
     return () => navigator.geolocation.clearWatch(watchId);
   }, [
+    permissionsGranted,
     markersGenerated,
     setCoordinates,
     generateMarkersAtLocation,
     updateVisibleMarkers,
   ]);
 
-  // Handle device orientation for heading - INVERTIDO NOVAMENTE PARA CORRIGIR DIREÇÃO
+  // Função para aplicar filtro de suavização à bússola
+  const applyHeadingFilter = (newHeading: number): number => {
+    // Inicializar o histórico se for o primeiro valor
+    if (headingHistoryRef.current.length === 0) {
+      // Preenche o histórico com o valor inicial para evitar transições bruscas
+      headingHistoryRef.current = Array(8).fill(newHeading);
+      lastValidHeadingRef.current = newHeading;
+      return newHeading;
+    }
+
+    const now = Date.now();
+    const timeDelta = now - lastHeadingTimestampRef.current;
+    lastHeadingTimestampRef.current = now;
+
+    // Verifica mudanças bruscas (possivelmente ruído)
+    const lastHeading = lastValidHeadingRef.current || headingHistoryRef.current[0];
+    let headingDiff = Math.abs(newHeading - lastHeading);
+    // Ajuste para lidar com a transição 359° -> 0°
+    if (headingDiff > 180) {
+      headingDiff = 360 - headingDiff;
+    }
+
+    // Se a mudança for muito brusca e rápida, pode ser um erro ou ruído
+    // Ignora mudanças muito rápidas a menos que estejamos em posição horizontal
+    const isDeviceNearlyHorizontal = 
+      deviceOrientationRef.current.beta !== null && 
+      Math.abs(deviceOrientationRef.current.beta) < 25;
+    
+    // Filtragem mais forte para movimentos bruscos quando não estamos na horizontal
+    // (segurando o dispositivo como uma "janela" para o mundo)
+    const isValidReading = isDeviceNearlyHorizontal || 
+      (headingDiff < 45 || timeDelta > 300);
+
+    if (!isValidReading) {
+      // Retorna o último valor válido em caso de leitura duvidosa
+      return lastValidHeadingRef.current || newHeading;
+    }
+
+    // Adiciona o novo valor ao histórico (limitado a 8 valores)
+    headingHistoryRef.current.push(newHeading);
+    if (headingHistoryRef.current.length > 8) {
+      headingHistoryRef.current.shift();
+    }
+
+    // Aplica filtro de média ponderada (valores mais recentes têm mais peso)
+    const weights = [0.05, 0.05, 0.1, 0.1, 0.1, 0.15, 0.2, 0.25];
+    let filteredHeading = 0;
+    let weightSum = 0;
+
+    // Calcula média ponderada considerando a circularidade do ângulo
+    // (para lidar com a transição 359° -> 0°)
+    let sinSum = 0;
+    let cosSum = 0;
+
+    for (let i = 0; i < headingHistoryRef.current.length; i++) {
+      const weight = weights[weights.length - headingHistoryRef.current.length + i];
+      weightSum += weight;
+      
+      // Converte para radianos e soma componentes vetoriais
+      const radians = (headingHistoryRef.current[i] * Math.PI) / 180;
+      sinSum += Math.sin(radians) * weight;
+      cosSum += Math.cos(radians) * weight;
+    }
+
+    // Converte de volta para graus
+    filteredHeading = (Math.atan2(sinSum, cosSum) * 180) / Math.PI;
+    if (filteredHeading < 0) {
+      filteredHeading += 360;
+    }
+
+    // Atualiza o último heading válido
+    lastValidHeadingRef.current = filteredHeading;
+    
+    return filteredHeading;
+  };
+
+  // Função para lidar com a compensação de inclinação
+  const getCompensatedHeading = (
+    alpha: number,
+    beta: number | null,
+    gamma: number | null
+  ): number => {
+    // Se não temos dados de inclinação, usamos apenas alpha
+    if (beta === null || gamma === null) {
+      return 360 - alpha;
+    }
+
+    // Salva o estado atual da orientação do dispositivo
+    deviceOrientationRef.current = { beta, gamma };
+
+    // Aplicamos um fator de compensação baseado na inclinação (beta)
+    // Quando o dispositivo está mais inclinado, reduzimos a influência do magnetômetro
+    let heading = 360 - alpha;
+
+    // Compensação suave para quando o dispositivo está sendo inclinado
+    // Reduz o impacto das leituras quando o celular não está na horizontal
+    const betaAbs = Math.abs(beta);
+    
+    // Quando beta está próximo de 90° (celular na vertical), 
+    // a leitura do magnetômetro (alpha) torna-se menos confiável
+    if (betaAbs > 45) {
+      // Se tivermos um valor anterior válido e a inclinação for muito alta,
+      // preferimos o valor anterior para evitar inversões da bússola
+      if (lastValidHeadingRef.current !== null && betaAbs > 70) {
+        // A inclinação é tão alta que preferimos usar o último valor conhecido
+        return lastValidHeadingRef.current;
+      }
+    }
+
+    return heading;
+  };
+
+  // Handle device orientation for heading - VERSÃO MELHORADA COM FILTRO
   useEffect(() => {
+    if (!permissionsGranted) return;
+
     const handleOrientation = (event: DeviceOrientationEvent) => {
       if (event.alpha !== null) {
-        // Voltamos à fórmula original que funcionava melhor
-        const heading = 360 - event.alpha;
-        setHeading(heading);
+        // Obter o heading compensado considerando a inclinação do dispositivo
+        const rawHeading = getCompensatedHeading(
+          event.alpha, 
+          event.beta, 
+          event.gamma
+        );
+        
+        // Aplicar filtro de suavização
+        const filteredHeading = applyHeadingFilter(rawHeading);
+        
+        // Atualizar o estado apenas se o valor for válido e diferente do atual
+        if (!isNaN(filteredHeading) && filteredHeading !== heading) {
+          setHeading(filteredHeading);
+        }
       }
     };
 
@@ -123,10 +370,12 @@ const ARJSView: React.FC = () => {
     return () => {
       window.removeEventListener('deviceorientation', handleOrientation, true);
     };
-  }, [setHeading]);
+  }, [permissionsGranted, setHeading, heading]);
 
   // Monitor and handle camera errors from A-Frame
   useEffect(() => {
+    if (!permissionsGranted) return;
+
     // Helper to capture camera errors from A-Frame/AR.js
     const handleCameraError = (error: ErrorEvent) => {
       // Check if it's a camera-related error from AR.js
@@ -168,33 +417,45 @@ const ARJSView: React.FC = () => {
     return () => {
       window.removeEventListener('error', handleCameraError);
     };
-  }, []);
-
-  // Set up communication bridge with AR.js
-  useEffect(() => {
-    // Bridge between React and AR.js
-    window.arjsEventHandlers = {
-      onMarkerSelect: markerId => {
-        selectMarker(markerId);
-      },
-    };
-
-    return () => {
-      delete window.arjsEventHandlers;
-    };
-  }, [selectMarker]);
+  }, [permissionsGranted]);
 
   // Handle camera permissions
   const requestCameraPermission = async () => {
     try {
-      await navigator.mediaDevices.getUserMedia({
+      // Request camera permission
+      const cameraStream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: 'environment', // Prefer back camera
         },
       });
-      setPermissionsGranted(true);
-      setIsLoading(false);
-      setShowCameraError(false);
+
+      // Release the camera immediately after permission check
+      // to avoid blocking it for AR.js
+      cameraStream.getTracks().forEach(track => track.stop());
+
+      // Now check location permission
+      try {
+        await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 5000,
+            maximumAge: 0,
+          });
+        });
+
+        // If we get here, both permissions are granted
+        setPermissionsGranted(true);
+        setIsLoading(true);
+        setShowCameraError(false);
+
+        // Initialize AR with a delay to allow permissions to propagate
+        setTimeout(() => {
+          initializeAR();
+        }, 500);
+      } catch (error) {
+        console.error('Location permission error:', error);
+        setErrorMessage('Location permission denied');
+      }
     } catch (error) {
       console.error('Camera permission error:', error);
       setPermissionsGranted(false);
@@ -236,25 +497,21 @@ const ARJSView: React.FC = () => {
     }
   }, [markersGenerated, allMarkers.length]);
 
-  // Initialize AR.js
-  useEffect(() => {
-    if (sceneRef.current) {
-      // AR.js initialization logic - executed after scene is ready
-      const timer = setTimeout(() => {
-        setIsLoading(false);
-        updateVisibleMarkers();
-      }, 2000);
-
-      return () => clearTimeout(timer);
-    }
-  }, [sceneRef, updateVisibleMarkers]);
+  // Before permissions have been checked, show loading
+  if (!permissionsChecked) {
+    return (
+      <ErrorBoundary>
+        <LoadingState message="Verificando permissões..." />
+      </ErrorBoundary>
+    );
+  }
 
   // UI for when permissions haven't been granted
   if (!permissionsGranted) {
     return (
       <ErrorBoundary>
         <PermissionRequest
-          cameraPermission={permissionsGranted}
+          cameraPermission={false}
           locationPermission={coordinates.latitude !== null}
           cameraError={errorMessage}
           locationError={errorMessage}
@@ -322,6 +579,7 @@ const ARJSView: React.FC = () => {
               simulateLongitude: coordinates.longitude,
               gpsMinDistance: 5,
               gpsTimeInterval: 1000,
+              simulateAltitude: coordinates.altitude,
             }}
           />
 
@@ -330,7 +588,7 @@ const ARJSView: React.FC = () => {
             coordinates.latitude &&
             coordinates.longitude &&
             allMarkers.map(marker => {
-              const [lng, lat] = marker.geometry.coordinates;
+              const [lng, lat, altitude = 0] = marker.geometry.coordinates;
               // Only create entities for markers in the current visible list
               const isVisible = visibleMarkers.some(
                 visibleMarker => visibleMarker.id === marker.id,
@@ -342,7 +600,7 @@ const ARJSView: React.FC = () => {
                 <Entity
                   key={marker.id}
                   primitive="a-box"
-                  gps-entity-place={`latitude: ${lat}; longitude: ${lng};`}
+                  gps-entity-place={`latitude: ${lat}; longitude: ${lng}; altitude: ${altitude};`}
                   material={{ color: '#2196f3' }}
                   position={{ x: 0, y: 0, z: 0 }}
                   scale={{ x: 0.5, y: 0.5, z: 0.5 }}

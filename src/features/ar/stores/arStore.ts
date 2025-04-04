@@ -10,6 +10,7 @@ interface ARState {
     latitude: number | null;
     longitude: number | null;
     accuracy: number | null;
+    altitude: number | null;
   };
   heading: number | null;
   compassCalibrated: boolean;
@@ -23,7 +24,12 @@ interface ARState {
   markersGenerated: boolean;
 
   // Location actions
-  setCoordinates: (lat: number, lng: number, accuracy: number) => void;
+  setCoordinates: (
+    lat: number,
+    lng: number,
+    accuracy: number,
+    altitude?: number,
+  ) => void;
   setHeading: (heading: number) => void;
   setCompassCalibrated: (calibrated: boolean) => void;
   setLocationPermission: (permission: boolean) => void;
@@ -31,7 +37,11 @@ interface ARState {
 
   // Markers actions
   selectMarker: (id: string | null) => void;
-  generateMarkersAtLocation: (lat: number, lng: number) => void;
+  generateMarkersAtLocation: (
+    lat: number,
+    lng: number,
+    altitude?: number,
+  ) => void;
   updateVisibleMarkers: () => void;
 }
 
@@ -41,6 +51,7 @@ export const useARStore = create<ARState>((set, get) => ({
     latitude: null,
     longitude: null,
     accuracy: null,
+    altitude: null,
   },
   heading: null,
   compassCalibrated: false,
@@ -54,15 +65,15 @@ export const useARStore = create<ARState>((set, get) => ({
   markersGenerated: false,
 
   // Location actions
-  setCoordinates: (latitude, longitude, accuracy) => {
-    set({ coordinates: { latitude, longitude, accuracy } });
+  setCoordinates: (latitude, longitude, accuracy, altitude = 0) => {
+    set({ coordinates: { latitude, longitude, accuracy, altitude } });
 
     // If we receive location for the first time and markers are not generated yet,
     // generate markers around the user's current position
     const state = get();
     if (latitude && longitude) {
       if (!state.markersGenerated) {
-        get().generateMarkersAtLocation(latitude, longitude);
+        get().generateMarkersAtLocation(latitude, longitude, altitude);
       } else {
         // Update the visible markers with new distance calculations
         get().updateVisibleMarkers();
@@ -79,8 +90,10 @@ export const useARStore = create<ARState>((set, get) => ({
   selectMarker: id => set({ selectedMarkerId: id }),
 
   // Generate new markers at the user's location
-  generateMarkersAtLocation: (lat, lng) => {
-    console.log(`Generating POIs around location: ${lat}, ${lng}`);
+  generateMarkersAtLocation: (lat, lng, altitude = 0) => {
+    console.log(
+      `Generating POIs around location: ${lat}, ${lng}, altitude: ${altitude}`,
+    );
     const newPOIs = generateSamplePOIs(lat, lng);
 
     set({
@@ -95,6 +108,7 @@ export const useARStore = create<ARState>((set, get) => ({
         newPOIs.features,
         state.coordinates.latitude,
         state.coordinates.longitude,
+        altitude,
       );
 
       set({ visibleMarkers: processedMarkers });
@@ -113,6 +127,7 @@ export const useARStore = create<ARState>((set, get) => ({
         state.allMarkers,
         state.coordinates.latitude,
         state.coordinates.longitude,
+        state.coordinates.altitude || 0,
       );
 
       set({ visibleMarkers: processedMarkers });
