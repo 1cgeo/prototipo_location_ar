@@ -3,6 +3,7 @@ import { MarkersCollection, Marker } from '../schemas/markerSchema';
 
 /**
  * Gera pontos de interesse aleatórios ao redor de uma localização
+ * Versão melhorada com menos POIs, categorias diversas e diferentes distâncias
  *
  * @param centerLat Latitude central (localização atual do usuário)
  * @param centerLng Longitude central (localização atual do usuário)
@@ -15,97 +16,161 @@ export const generateSamplePOIs = (
   // Categorias disponíveis
   const categories = [
     'restaurante',
+    'cafeteria',
     'loja',
     'atracao',
+    'teatro',
     'servico',
     'transporte',
   ];
 
-  // Nomes de exemplo para cada categoria
+  // Nomes de exemplo para cada categoria (mais diversificados)
   const names: Record<string, string[]> = {
     restaurante: [
-      'Café Central',
-      'Restaurante Bella Vita',
-      'Padaria Estrela',
-      'Bar do João',
-      'Pizzaria Napoli',
+      'Cantina Italiana',
+      'Boteco do Chico',
+      'Bistrô Paris',
+      'Churrascaria Brasa',
+      'Sushi Express',
+    ],
+    cafeteria: [
+      'Café do Porto',
+      'Coffee & Co',
+      'Padaria Aurora',
+      'Doces & Cia',
+      'Confeitaria Sublime',
     ],
     loja: [
       'Livraria Cultura',
-      'Loja de Roupas Fashion',
-      'Mercado Local',
-      'Loja de Eletrônicos',
+      'Moda Fashion',
+      'Eletrônicos Tech',
       'Artesanato Regional',
+      'Shopping Central',
     ],
     atracao: [
-      'Museu de Arte',
-      'Mirante Panorâmico',
-      'Teatro Municipal',
+      'Museu de História',
+      'Parque da Cidade',
       'Galeria de Arte',
+      'Mirante Vista Alta',
       'Monumento Histórico',
+    ],
+    teatro: [
+      'Teatro Municipal',
+      'Casa de Shows',
+      'Cinema Paradiso',
+      'Espaço Cultural',
+      'Arena de Eventos',
     ],
     servico: [
       'Farmácia 24h',
       'Banco Central',
-      'Lotérica Sorte Grande',
-      'Lavanderia Rápida',
-      'Clínica Médica',
+      'Hospital São Lucas',
+      'Correios',
+      'Lavanderia Expressa',
     ],
     transporte: [
-      'Metrô Centro',
-      'Ponto de Ônibus',
-      'Estação de Trem',
-      'Parada de Táxi',
+      'Estação Metro',
+      'Terminal de Ônibus',
+      'Ponto de Táxi',
       'Bicicletário Público',
+      'Aeroporto Regional',
     ],
   };
 
-  // Descrições de exemplo
+  // Descrições de exemplo (mais detalhadas)
   const descriptions = [
-    'Ambiente agradável com ótimo atendimento.',
-    'Opções variadas para todos os gostos.',
-    'Localização privilegiada e fácil acesso.',
-    'Preços acessíveis e qualidade garantida.',
-    'Atendimento 24 horas com profissionais qualificados.',
-    'Ideal para visitação em família ou com amigos.',
-    'Referência na região há mais de 20 anos.',
-    'Ambiente moderno com infraestrutura completa.',
+    'Local aconchegante com ambiente familiar e ótimo atendimento. Perfeito para visitar com amigos ou família.',
+    'Estabelecimento moderno com excelente infraestrutura e preços acessíveis para todos os públicos.',
+    'Ponto de referência na região, conhecido pela qualidade e tradição há mais de 20 anos no mercado.',
+    'Ambiente agradável e serviço de primeira qualidade. Vale a pena conhecer!',
+    'Espaço amplo com estacionamento e facilidades de acesso para todos os visitantes.',
+    'Atendimento personalizado com profissionais qualificados. Venha conferir!',
+    'Localização privilegiada no centro da cidade, próximo a diversos pontos turísticos.',
+    'Opções variadas para todos os gostos, com produtos exclusivos e atendimento premium.',
   ];
 
-  // Gera pontos distribuídos em todas as direções para facilitar o teste
-  const generateDirectionalMarkers = (count: number): Marker[] => {
+  /**
+   * Gera marcadores distribuídos em diferentes distâncias e direções
+   * Versão melhorada com menor número de POIs e melhor distribuição
+   */
+  const generateDistributedMarkers = (): Marker[] => {
     const markers: Marker[] = [];
-
-    // Vamos distribuir os marcadores em diferentes direções e distâncias
-    for (let i = 0; i < count; i++) {
+    const usedCategories: Set<string> = new Set();
+    
+    // Total reduzido de POIs
+    const TOTAL_POIS = 7;
+    
+    // Categorias que já foram usadas para marcadores próximos
+    const nearbyUsedCategories: Set<string> = new Set();
+    
+    // Gerar POIs com diferentes distâncias
+    for (let i = 0; i < TOTAL_POIS; i++) {
       // Distribuir pontos em círculo ao redor do usuário
-      // Ângulo em radianos (distribuído uniformemente em 360°)
-      const angle = (i * 2 * Math.PI) / count;
-
-      // Distância aleatória entre 50m e 300m (convertida para graus)
-      // Isso garante que os marcadores estarão em distâncias curtas e visíveis
-      const distanceMeters = 50 + Math.random() * 250;
-      const distanceDegrees = distanceMeters / 111000; // Aproximação rápida de metros para graus
-
-      // Calcula o deslocamento em latitude e longitude
+      // Ângulo distribuído uniformemente (divide o círculo em partes iguais)
+      const angle = (i * (2 * Math.PI) / TOTAL_POIS) + (Math.random() * 0.2 - 0.1);
+      
+      // Determine a distância baseada na posição
+      // Alguns pontos próximos, outros médios, outros distantes
+      let distanceMeters: number;
+      
+      if (i % 3 === 0) { 
+        // Próximo (50-150m)
+        distanceMeters = 50 + Math.random() * 100;
+      } else if (i % 3 === 1) { 
+        // Médio (150-300m)
+        distanceMeters = 150 + Math.random() * 150;
+      } else { 
+        // Distante (300-450m)
+        distanceMeters = 300 + Math.random() * 150;
+      }
+      
+      // Adiciona pequena variação aleatória à distância
+      distanceMeters *= (0.9 + Math.random() * 0.2);
+      
+      // Conversão para graus
+      const distanceDegrees = distanceMeters / 111000;
+      
+      // Calcula deslocamento
       const latOffset = distanceDegrees * Math.cos(angle);
-      const lngOffset =
-        (distanceDegrees * Math.sin(angle)) /
-        Math.cos((centerLat * Math.PI) / 180);
-
-      // Calcula posição final
+      const lngOffset = distanceDegrees * Math.sin(angle) / Math.cos((centerLat * Math.PI) / 180);
+      
+      // Posição final
       const lat = centerLat + latOffset;
       const lng = centerLng + lngOffset;
-
-      // Escolhe categoria aleatória
-      const category = categories[i % categories.length];
-
-      // Escolhe nome e descrição aleatórios
+      
+      // Seleção de categoria - garantindo diversidade
+      // Para POIs próximos, garantir categorias diferentes
+      let category: string;
+      
+      if (distanceMeters < 200) {
+        // Para POIs próximos, nunca usar a mesma categoria
+        do {
+          category = categories[Math.floor(Math.random() * categories.length)];
+        } while (nearbyUsedCategories.has(category));
+        
+        nearbyUsedCategories.add(category);
+      } else {
+        // Para POIs distantes, tentar não repetir categorias se possível
+        if (usedCategories.size < categories.length) {
+          do {
+            category = categories[Math.floor(Math.random() * categories.length)];
+          } while (usedCategories.has(category));
+        } else {
+          // Se já usamos todas as categorias, escolhe qualquer uma
+          category = categories[Math.floor(Math.random() * categories.length)];
+        }
+      }
+      
+      usedCategories.add(category);
+      
+      // Nome aleatório da categoria
       const categoryNames = names[category] || names['restaurante'];
-      const nameIndex = i % categoryNames.length;
+      const nameIndex = Math.floor(Math.random() * categoryNames.length);
       const name = categoryNames[nameIndex];
-      const description = descriptions[i % descriptions.length];
-
+      
+      // Descrição aleatória
+      const description = descriptions[Math.floor(Math.random() * descriptions.length)];
+      
       // Adiciona o marcador
       markers.push({
         id: (i + 1).toString(),
@@ -122,14 +187,14 @@ export const generateSamplePOIs = (
         },
       });
     }
-
+    
     return markers;
   };
 
-  // Retorna a coleção de POIs com pontos distribuídos ao redor do usuário
+  // Retorna a coleção de POIs aprimorada
   return {
     type: 'FeatureCollection',
-    features: generateDirectionalMarkers(12),
+    features: generateDistributedMarkers(),
   };
 };
 

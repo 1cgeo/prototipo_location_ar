@@ -6,6 +6,8 @@ import StoreIcon from '@mui/icons-material/Store';
 import MuseumIcon from '@mui/icons-material/Museum';
 import LocalPharmacyIcon from '@mui/icons-material/LocalPharmacy';
 import DirectionsSubwayIcon from '@mui/icons-material/DirectionsSubway';
+import LocalCafeIcon from '@mui/icons-material/LocalCafe';
+import TheaterComedyIcon from '@mui/icons-material/TheaterComedy';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import ExploreIcon from '@mui/icons-material/Explore';
 import { MarkerWithDistance } from '../schemas/markerSchema';
@@ -24,6 +26,19 @@ interface ARMarkerOverlayProps {
 
 // Constantes para configuração da visualização
 const MAX_MARKER_DISTANCE = 500; // Distância máxima em metros
+
+// Mapeamento de categorias para cores
+const CATEGORY_COLORS: Record<string, string> = {
+  restaurante: '#FF5722', // Laranja
+  cafeteria: '#795548', // Marrom
+  loja: '#2196F3', // Azul
+  atracao: '#9C27B0', // Roxo
+  teatro: '#E91E63', // Rosa
+  servico: '#00BCD4', // Ciano
+  transporte: '#3F51B5', // Índigo
+  default: '#4CAF50', // Verde
+};
+
 /**
  * UI overlay que mostra markers visíveis no campo de visão atual
  */
@@ -87,10 +102,14 @@ const ARMarkerOverlay: React.FC<ARMarkerOverlayProps> = ({
     switch (category) {
       case 'restaurante':
         return <RestaurantIcon />;
+      case 'cafeteria':
+        return <LocalCafeIcon />;
       case 'loja':
         return <StoreIcon />;
       case 'atracao':
         return <MuseumIcon />;
+      case 'teatro':
+        return <TheaterComedyIcon />;
       case 'servico':
         return <LocalPharmacyIcon />;
       case 'transporte':
@@ -98,6 +117,11 @@ const ARMarkerOverlay: React.FC<ARMarkerOverlayProps> = ({
       default:
         return <LocationOnIcon />;
     }
+  };
+  
+  // Obtem cor para cada categoria
+  const getCategoryColor = (category: string) => {
+    return CATEGORY_COLORS[category] || CATEGORY_COLORS.default;
   };
   
   // Calcula distribuição vertical para evitar sobreposição
@@ -165,9 +189,10 @@ const ARMarkerOverlay: React.FC<ARMarkerOverlayProps> = ({
       {/* Renderiza apenas os markers visíveis */}
       {distributedMarkers.map(({ marker, position, size, verticalOffset }) => {
         // Calcula opacidade com base na distância
-        const opacityByDistance = Math.max(0.5, Math.min(1, 1 - marker.distance / MAX_MARKER_DISTANCE));
+        const opacityByDistance = Math.max(0.6, Math.min(1, 1 - marker.distance / MAX_MARKER_DISTANCE));
         const isPulsingMarker = marker.distance < 100; // Pulsa para markers próximos
         const formattedDistance = formatDistance(marker.distance);
+        const markerColor = getCategoryColor(marker.properties.category);
         
         return (
           <Box
@@ -193,45 +218,57 @@ const ARMarkerOverlay: React.FC<ARMarkerOverlayProps> = ({
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
-                  transition: 'transform 0.2s ease-out',
+                  transition: 'all 0.2s ease-out',
                   '&:hover': {
                     transform: 'scale(1.1)',
+                    '& .marker-icon': {
+                      boxShadow: `0 0 0 4px ${alpha(markerColor, 0.3)}, 0 4px 12px rgba(0,0,0,0.5)`,
+                    },
                   },
                 }}
               >
-                {/* Ícone do marker */}
+                {/* Ícone do marker - Estilo melhorado */}
                 <Box
+                  className="marker-icon"
                   sx={{
-                    backgroundColor: 'primary.main',
-                    color: 'primary.contrastText',
+                    backgroundColor: markerColor,
+                    color: '#fff',
                     borderRadius: '50%',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     width: size,
                     height: size,
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
-                    border: '2px solid white',
+                    boxShadow: `0 3px 10px ${alpha(markerColor, 0.5)}, 0 3px 6px rgba(0,0,0,0.4)`,
+                    border: `2px solid ${alpha('#ffffff', 0.9)}`,
                     opacity: opacityByDistance,
                     animation: isPulsingMarker ? 'pulse 2s infinite' : 'none',
+                    transition: 'all 0.2s ease',
+                    background: `linear-gradient(135deg, ${markerColor}, ${alpha(markerColor, 0.7)})`,
+                    '& .MuiSvgIcon-root': {
+                      filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))',
+                      fontSize: size * 0.55,
+                    },
                   }}
                 >
                   {getCategoryIcon(marker.properties.category)}
                 </Box>
                 
-                {/* Rótulo do marker */}
+                {/* Rótulo do marker - Estilo melhorado */}
                 <Box
                   sx={{
-                    backgroundColor: alpha('#000000', 0.7),
+                    backgroundColor: alpha('#000000', 0.75),
                     color: 'white',
-                    padding: '4px 8px',
-                    borderRadius: 1,
-                    marginTop: 0.5,
+                    padding: '5px 10px',
+                    borderRadius: 3,
+                    marginTop: 0.8,
                     textAlign: 'center',
                     opacity: opacityByDistance,
-                    backdropFilter: 'blur(4px)',
-                    border: '1px solid rgba(255,255,255,0.1)',
+                    backdropFilter: 'blur(8px)',
+                    border: `1px solid ${alpha(markerColor, 0.3)}`,
+                    boxShadow: '0 3px 8px rgba(0,0,0,0.25)',
                     maxWidth: '150px',
+                    transform: 'translateZ(0)', // Para melhorar a renderização
                   }}
                 >
                   <Typography
@@ -241,14 +278,16 @@ const ARMarkerOverlay: React.FC<ARMarkerOverlayProps> = ({
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
-                      fontWeight: 500,
+                      fontWeight: 600,
                       lineHeight: 1.2,
+                      letterSpacing: '0.01em',
+                      fontSize: isTablet ? '0.75rem' : '0.7rem',
                     }}
                   >
                     {marker.properties.name}
                   </Typography>
                   
-                  {/* Indicador de distância */}
+                  {/* Indicador de distância - Estilo melhorado */}
                   <Box
                     sx={{
                       display: 'flex',
@@ -256,10 +295,16 @@ const ARMarkerOverlay: React.FC<ARMarkerOverlayProps> = ({
                       justifyContent: 'center',
                       gap: 0.5,
                       mt: 0.3,
-                      fontSize: '0.7rem',
+                      fontSize: isTablet ? '0.7rem' : '0.65rem',
+                      opacity: 0.85,
                     }}
                   >
-                    <ExploreIcon sx={{ fontSize: '0.9rem' }} />
+                    <ExploreIcon 
+                      sx={{ 
+                        fontSize: isTablet ? '0.9rem' : '0.8rem',
+                        color: alpha(markerColor, 0.9),
+                      }} 
+                    />
                     <span>{formattedDistance}</span>
                   </Box>
                 </Box>
