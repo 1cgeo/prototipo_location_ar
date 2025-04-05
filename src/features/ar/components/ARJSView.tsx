@@ -10,7 +10,7 @@ import { useARStore } from '../stores/arStore';
 import PermissionRequest from './PermissionRequest';
 import LoadingState from './LoadingState';
 import ErrorBoundary from './ErrorBoundary';
-import ARJSOverlay from './ARJSOverlay';
+import InfoCard from './InfoCard';
 import ARMarkerOverlay from './ARMarkerOverlay';
 import AzimuthIndicator from './AzimuthIndicator';
 import { useScreenOrientation } from '../hooks/useScreenOrientation';
@@ -597,9 +597,13 @@ const ARJSView: React.FC = () => {
           />
         )}
 
-        {/* Info Card for selected marker - Agora em tela cheia */}
+        {/* Renderização direta do InfoCard quando um marcador é selecionado */}
         {selectedMarker && (
-          <ARJSOverlay orientation={orientation} dimensions={dimensions} />
+          <InfoCard
+            marker={selectedMarker}
+            orientation={orientation}
+            isTablet={dimensions.width >= 768}
+          />
         )}
 
         {/* Marker generation notice */}
