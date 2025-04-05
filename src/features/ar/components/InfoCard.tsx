@@ -2,8 +2,6 @@
 import React from 'react';
 import {
   Card,
-  CardContent,
-  CardHeader,
   Typography,
   IconButton,
   Box,
@@ -12,6 +10,8 @@ import {
   alpha,
   Button,
   Avatar,
+  AppBar,
+  Toolbar,
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import ExploreIcon from '@mui/icons-material/Explore';
@@ -27,6 +27,7 @@ import DirectionsSubwayIcon from '@mui/icons-material/DirectionsSubway';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import { MarkerWithDistance } from '../schemas/markerSchema';
 import { useARStore } from '../stores/arStore';
 import {
@@ -65,7 +66,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 /**
- * Exibe informações sobre um marcador selecionado
+ * Exibe informações sobre um marcador selecionado em tela cheia
  */
 const InfoCard: React.FC<InfoCardProps> = ({
   marker,
@@ -138,111 +139,106 @@ const InfoCard: React.FC<InfoCardProps> = ({
   };
 
   return (
-    <Card
-      elevation={6}
+    <Box
       sx={{
-        backdropFilter: 'blur(10px)',
-        backgroundColor: alpha(theme.palette.background.paper, 0.9),
-        borderRadius: theme.shape.borderRadius * 1.5,
-        overflow: 'hidden',
-        transition: 'all 0.2s ease',
-        position: 'relative',
-        zIndex: 1200,
-        borderTop: `4px solid ${categoryColor}`,
-        // Ajustes para garantir que todo o conteúdo seja visível
-        maxHeight: '100%', // Permite expandir até o tamanho do container pai
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 2000,
         display: 'flex',
         flexDirection: 'column',
+        backgroundColor: alpha(theme.palette.background.paper, 0.95),
+        backdropFilter: 'blur(10px)',
       }}
     >
-      <CardHeader
-        avatar={
+      {/* Barra superior com botão de voltar */}
+      <AppBar
+        position="sticky"
+        color="transparent"
+        elevation={0}
+        sx={{
+          borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+          borderTop: `4px solid ${categoryColor}`,
+          backdropFilter: 'blur(10px)',
+          backgroundColor: alpha(theme.palette.background.paper, 0.8),
+        }}
+      >
+        <Toolbar sx={{ minHeight: isTablet ? 64 : 56 }}>
+          <IconButton
+            edge="start"
+            color="inherit"
+            onClick={handleClose}
+            aria-label="close"
+            sx={{ mr: 2 }}
+          >
+            <ArrowBackIcon />
+          </IconButton>
+
           <Avatar
             sx={{
               bgcolor: categoryColor,
               color: '#fff',
               boxShadow: `0 3px 5px ${alpha(categoryColor, 0.4)}`,
+              mr: 2,
             }}
           >
             {getCategoryIcon(category)}
           </Avatar>
-        }
-        title={
-          <Typography
-            variant={isTablet ? 'h5' : 'h6'}
-            component="div"
-            sx={{
-              fontWeight: 600,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              lineHeight: 1.2,
-              color: theme.palette.text.primary,
-              // Limita para que não quebre o layout
-              maxHeight: '3.6em',
-            }}
-          >
-            {name}
-          </Typography>
-        }
-        subheader={
-          <Typography
-            variant="body2"
-            color="text.secondary"
-            sx={{
-              mt: 0.5,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {categoryLabel}
-          </Typography>
-        }
-        action={
-          <IconButton
-            onClick={handleClose}
-            aria-label="close"
-            sx={{
-              backgroundColor: 'rgba(0,0,0,0.08)',
-              '&:hover': {
-                backgroundColor: 'rgba(0,0,0,0.14)',
-              },
-              m: 1,
-            }}
-          >
-            <CloseIcon />
-          </IconButton>
-        }
-        sx={{
-          pb: 0,
-          borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
-        }}
-      />
 
-      <CardContent
+          <Box sx={{ flexGrow: 1 }}>
+            <Typography
+              variant={isTablet ? 'h5' : 'h6'}
+              component="h1"
+              noWrap
+              sx={{
+                fontWeight: 600,
+                color: theme.palette.text.primary,
+              }}
+            >
+              {name}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" noWrap>
+              {categoryLabel}
+            </Typography>
+          </Box>
+        </Toolbar>
+      </AppBar>
+
+      {/* Conteúdo principal com scroll */}
+      <Box
         sx={{
-          pt: 2,
           flex: 1,
-          overflowY: 'auto', // Permite scroll dentro do CardContent
-          // Estilos para a barra de rolagem personalizada
+          overflowY: 'auto',
+          px: { xs: 2, sm: 3 },
+          py: 2,
           '&::-webkit-scrollbar': {
-            width: '6px',
+            width: '8px',
           },
           '&::-webkit-scrollbar-track': {
-            background: 'rgba(0,0,0,0.1)',
-            borderRadius: '3px',
+            background: 'rgba(0,0,0,0.05)',
+            borderRadius: '4px',
           },
           '&::-webkit-scrollbar-thumb': {
-            background: 'rgba(0,0,0,0.3)',
-            borderRadius: '3px',
+            background: alpha(categoryColor, 0.3),
+            borderRadius: '4px',
             '&:hover': {
-              background: 'rgba(0,0,0,0.5)',
+              background: alpha(categoryColor, 0.5),
             },
           },
         }}
       >
         {/* Distance, direction and altitude */}
-        <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+        <Box
+          sx={{
+            mb: 3,
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 1,
+            justifyContent: 'center',
+          }}
+        >
           <Chip
             icon={<ExploreIcon />}
             label={distance}
@@ -276,76 +272,10 @@ const InfoCard: React.FC<InfoCardProps> = ({
           />
         </Box>
 
-        {/* Descrição */}
-        <Typography
-          variant="body1"
-          sx={{
-            color: alpha(theme.palette.text.primary, 0.9),
-            backgroundColor: alpha(theme.palette.background.default, 0.3),
-            p: 2,
-            borderRadius: 2,
-            mb: 2,
-            lineHeight: 1.6,
-            letterSpacing: '0.015em',
-            // Limitando altura da descrição para não ocupar muito espaço
-            maxHeight: orientation === 'portrait' ? '25vh' : '30vh',
-            overflow: 'auto',
-          }}
-        >
-          {description || 'Sem descrição disponível.'}
-        </Typography>
-
-        {/* 3D Position Information */}
+        {/* Mapa da direção do ponto */}
         <Box
           sx={{
-            mt: 2,
-            mb: 2,
-            p: 2,
-            borderRadius: 2,
-            border: `1px solid ${alpha(theme.palette.divider, 0.2)}`,
-            backgroundColor: alpha(theme.palette.background.default, 0.3),
-          }}
-        >
-          <Typography variant="subtitle2" fontWeight="bold" sx={{ mb: 1 }}>
-            Posição 3D
-          </Typography>
-
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-            <Typography variant="body2">Distância:</Typography>
-            <Typography variant="body2" fontWeight="medium">
-              {distance}
-            </Typography>
-          </Box>
-
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-            <Typography variant="body2">Direção horizontal:</Typography>
-            <Typography variant="body2" fontWeight="medium">
-              {azimuth}° {cardinalDirection}
-            </Typography>
-          </Box>
-
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-            <Typography variant="body2">Altitude relativa:</Typography>
-            <Typography variant="body2" fontWeight="medium">
-              {formattedAltitude}
-            </Typography>
-          </Box>
-
-          {marker.verticalAngle !== undefined && (
-            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-              <Typography variant="body2">Ângulo vertical:</Typography>
-              <Typography variant="body2" fontWeight="medium">
-                {getVerticalDirectionText()}
-              </Typography>
-            </Box>
-          )}
-        </Box>
-
-        {/* Direção - Estilo melhorado */}
-        <Box
-          sx={{
-            mt: 2,
-            p: 2,
+            p: 3,
             borderRadius: 2,
             border: `1px solid ${alpha(theme.palette.divider, 0.2)}`,
             display: 'flex',
@@ -353,14 +283,15 @@ const InfoCard: React.FC<InfoCardProps> = ({
             justifyContent: 'center',
             flexDirection: 'column',
             gap: 1,
+            mb: 3,
             backgroundColor: alpha(theme.palette.background.default, 0.4),
           }}
         >
           <Box
             sx={{
               position: 'relative',
-              width: 80,
-              height: 80,
+              width: 100,
+              height: 100,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -380,7 +311,7 @@ const InfoCard: React.FC<InfoCardProps> = ({
             >
               <NavigationIcon
                 sx={{
-                  fontSize: 32,
+                  fontSize: 40,
                   color: categoryColor,
                   filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.3))',
                 }}
@@ -412,7 +343,7 @@ const InfoCard: React.FC<InfoCardProps> = ({
                           ? 'translateY(-50%)'
                           : 'none',
                     fontWeight: 'bold',
-                    fontSize: '0.7rem',
+                    fontSize: '0.8rem',
                   }}
                 >
                   {point}
@@ -421,7 +352,7 @@ const InfoCard: React.FC<InfoCardProps> = ({
             })}
           </Box>
 
-          <Typography variant="body2" fontWeight="medium">
+          <Typography variant="body1" fontWeight="medium" align="center">
             Direção:{' '}
             <strong>
               {azimuth}° {cardinalDirection}
@@ -429,26 +360,134 @@ const InfoCard: React.FC<InfoCardProps> = ({
           </Typography>
         </Box>
 
-        {/* Botão fechar - mais proeminente */}
+        {/* Descrição - Seção destacada */}
+        <Card
+          elevation={0}
+          sx={{
+            mb: 3,
+            borderRadius: 2,
+            border: `1px solid ${alpha(categoryColor, 0.2)}`,
+            backgroundColor: alpha(theme.palette.background.default, 0.3),
+          }}
+        >
+          <Box sx={{ p: 2 }}>
+            <Typography
+              variant="h6"
+              component="h2"
+              gutterBottom
+              sx={{
+                borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+                pb: 1,
+                color: categoryColor,
+              }}
+            >
+              Descrição
+            </Typography>
+            <Typography
+              variant="body1"
+              sx={{
+                color: alpha(theme.palette.text.primary, 0.9),
+                lineHeight: 1.6,
+                letterSpacing: '0.015em',
+              }}
+            >
+              {description || 'Sem descrição disponível.'}
+            </Typography>
+          </Box>
+        </Card>
+
+        {/* 3D Position Information */}
+        <Card
+          elevation={0}
+          sx={{
+            mb: 3,
+            borderRadius: 2,
+            border: `1px solid ${alpha(categoryColor, 0.2)}`,
+            backgroundColor: alpha(theme.palette.background.default, 0.3),
+          }}
+        >
+          <Box sx={{ p: 2 }}>
+            <Typography
+              variant="h6"
+              component="h2"
+              gutterBottom
+              sx={{
+                borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+                pb: 1,
+                color: categoryColor,
+              }}
+            >
+              Posição 3D
+            </Typography>
+
+            <Box
+              sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}
+            >
+              <Typography variant="body1">Distância:</Typography>
+              <Typography variant="body1" fontWeight="medium">
+                {distance}
+              </Typography>
+            </Box>
+
+            <Box
+              sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}
+            >
+              <Typography variant="body1">Direção horizontal:</Typography>
+              <Typography variant="body1" fontWeight="medium">
+                {azimuth}° {cardinalDirection}
+              </Typography>
+            </Box>
+
+            <Box
+              sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}
+            >
+              <Typography variant="body1">Altitude relativa:</Typography>
+              <Typography variant="body1" fontWeight="medium">
+                {formattedAltitude}
+              </Typography>
+            </Box>
+
+            {marker.verticalAngle !== undefined && (
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography variant="body1">Ângulo vertical:</Typography>
+                <Typography variant="body1" fontWeight="medium">
+                  {getVerticalDirectionText()}
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        </Card>
+      </Box>
+
+      {/* Botão de fechar fixo na parte inferior */}
+      <Box
+        sx={{
+          p: 2,
+          borderTop: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+          backgroundColor: alpha(theme.palette.background.paper, 0.8),
+          backdropFilter: 'blur(10px)',
+        }}
+      >
         <Button
           variant="contained"
           onClick={handleClose}
           fullWidth
           size="large"
+          startIcon={<CloseIcon />}
           sx={{
-            mt: 3,
-            py: 1.2,
+            py: 1.5,
             fontSize: '1rem',
             backgroundColor: categoryColor,
             '&:hover': {
               backgroundColor: alpha(categoryColor, 0.9),
             },
+            borderRadius: 2,
           }}
         >
           Fechar
         </Button>
-      </CardContent>
-    </Card>
+      </Box>
+    </Box>
   );
 };
 

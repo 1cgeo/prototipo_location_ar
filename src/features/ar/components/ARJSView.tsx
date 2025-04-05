@@ -29,7 +29,6 @@ const ARJSView: React.FC = () => {
   const [showMarkerMessage, setShowMarkerMessage] = useState(false);
   const [permissionsGranted, setPermissionsGranted] = useState(false);
   const [permissionsChecked, setPermissionsChecked] = useState(false);
-  const [compassLocked, setCompassLocked] = useState(false);
   const { orientation, dimensions } = useScreenOrientation();
 
   // Get data from store
@@ -49,10 +48,6 @@ const ARJSView: React.FC = () => {
 
   // Referências para o filtro de suavização da bússola
   const headingHistoryRef = useRef<number[]>([]);
-  const lastValidHeadingRef = useRef<number | null>(null);
-  const deviceOrientationRef = useRef<{ beta: number | null }>({
-    beta: null,
-  });
   const lastHeadingTimestampRef = useRef<number>(0);
 
   // Proactively check permissions on component mount
@@ -236,7 +231,6 @@ const ARJSView: React.FC = () => {
     if (headingHistoryRef.current.length === 0) {
       // Preenche o histórico com o valor inicial para evitar transições bruscas
       headingHistoryRef.current = Array(8).fill(newHeading);
-      lastValidHeadingRef.current = newHeading;
       return newHeading;
     }
 
@@ -246,27 +240,19 @@ const ARJSView: React.FC = () => {
 
     // Verifica mudanças bruscas (possivelmente ruído)
     const lastHeading =
-      lastValidHeadingRef.current || headingHistoryRef.current[0];
+      headingHistoryRef.current[headingHistoryRef.current.length - 1];
     let headingDiff = Math.abs(newHeading - lastHeading);
     // Ajuste para lidar com a transição 359° -> 0°
     if (headingDiff > 180) {
       headingDiff = 360 - headingDiff;
     }
 
-    // Se a mudança for muito brusca e rápida, pode ser um erro ou ruído
-    // Ignora mudanças muito rápidas a menos que estejamos em posição horizontal
-    const isDeviceNearlyHorizontal =
-      deviceOrientationRef.current.beta !== null &&
-      Math.abs(deviceOrientationRef.current.beta) < 25;
-
-    // Filtragem mais forte para movimentos bruscos quando não estamos na horizontal
-    // (segurando o dispositivo como uma "janela" para o mundo)
-    const isValidReading =
-      isDeviceNearlyHorizontal || headingDiff < 45 || timeDelta > 300;
+    // Filtragem mais forte para movimentos bruscos
+    const isValidReading = headingDiff < 45 || timeDelta > 300;
 
     if (!isValidReading) {
       // Retorna o último valor válido em caso de leitura duvidosa
-      return lastValidHeadingRef.current || newHeading;
+      return lastHeading;
     }
 
     // Adiciona o novo valor ao histórico (limitado a 8 valores)
@@ -301,60 +287,17 @@ const ARJSView: React.FC = () => {
       filteredHeading += 360;
     }
 
-    // Atualiza o último heading válido
-    lastValidHeadingRef.current = filteredHeading;
-
     return filteredHeading;
   };
 
-  // Função para lidar com a compensação de inclinação
-  const getCompensatedHeading = (
-    alpha: number,
-    beta: number | null,
-  ): number => {
-    // Se não temos dados de inclinação, usamos apenas alpha
-    if (beta === null) {
-      return 360 - alpha;
-    }
-
-    // Salva o estado atual da orientação do dispositivo
-    deviceOrientationRef.current = { beta };
-
-    // Aplicamos um fator de compensação baseado na inclinação (beta)
-    // Quando o dispositivo está mais inclinado, reduzimos a influência do magnetômetro
-    let heading = 360 - alpha;
-
-    // Compensação suave para quando o dispositivo está sendo inclinado
-    // Reduz o impacto das leituras quando o celular não está na horizontal
-    const betaAbs = Math.abs(beta);
-
-    // Quando beta está próximo de 90° (celular na vertical),
-    // a leitura do magnetômetro (alpha) torna-se menos confiável
-    if (betaAbs > 45) {
-      // Se tivermos um valor anterior válido e a inclinação for muito alta,
-      // preferimos o valor anterior para evitar inversões da bússola
-      if (lastValidHeadingRef.current !== null && betaAbs > 85) {
-        // A inclinação é tão alta que preferimos usar o último valor conhecido
-        // Atualiza o estado de bússola travada
-        setCompassLocked(true);
-        return lastValidHeadingRef.current;
-      }
-    } else {
-      // Inclinação normal, bússola desbloqueada
-      setCompassLocked(false);
-    }
-
-    return heading;
-  };
-
-  // Handle device orientation for heading - VERSÃO MELHORADA COM FILTRO
+  // Handle device orientation for heading - Versão simplificada
   useEffect(() => {
     if (!permissionsGranted) return;
 
     const handleOrientation = (event: DeviceOrientationEvent) => {
       if (event.alpha !== null) {
-        // Obter o heading compensado considerando a inclinação do dispositivo
-        const rawHeading = getCompensatedHeading(event.alpha, event.beta);
+        // Calcular o heading com base no alpha
+        const rawHeading = 360 - event.alpha;
 
         // Aplicar filtro de suavização
         const filteredHeading = applyHeadingFilter(rawHeading);
@@ -531,6 +474,11 @@ const ARJSView: React.FC = () => {
     );
   }
 
+  // Encontra o marcador selecionado, se houver
+  const selectedMarker = selectedMarkerId
+    ? visibleMarkers.find(marker => marker.id === selectedMarkerId)
+    : null;
+
   return (
     <ErrorBoundary>
       <Box
@@ -636,7 +584,6 @@ const ARJSView: React.FC = () => {
           <AzimuthIndicator
             heading={heading}
             isLandscape={orientation === 'landscape'}
-            isLocked={compassLocked}
           />
         )}
 
@@ -650,42 +597,9 @@ const ARJSView: React.FC = () => {
           />
         )}
 
-        {/* Info Card for selected marker as Modal */}
-        {selectedMarkerId && (
-          <Modal
-            open={!!selectedMarkerId}
-            onClose={() => selectMarker(null)}
-            aria-labelledby="marker-info-modal"
-            aria-describedby="marker-information-details"
-            sx={{
-              display: 'flex',
-              alignItems: orientation === 'landscape' ? 'center' : 'flex-end',
-              justifyContent: 'center',
-              p: 2,
-            }}
-            BackdropProps={{
-              sx: { backgroundColor: 'rgba(0,0,0,0.5)' },
-            }}
-          >
-            <Box
-              sx={{
-                width:
-                  orientation === 'landscape'
-                    ? dimensions.width >= 768
-                      ? '40%'
-                      : '60%'
-                    : dimensions.width >= 768
-                      ? '70%'
-                      : '90%',
-                maxWidth: 500,
-                outline: 'none',
-                maxHeight: orientation === 'portrait' ? '85vh' : '90vh',
-                overflowY: 'auto',
-              }}
-            >
-              <ARJSOverlay orientation={orientation} dimensions={dimensions} />
-            </Box>
-          </Modal>
+        {/* Info Card for selected marker - Agora em tela cheia */}
+        {selectedMarker && (
+          <ARJSOverlay orientation={orientation} dimensions={dimensions} />
         )}
 
         {/* Marker generation notice */}
