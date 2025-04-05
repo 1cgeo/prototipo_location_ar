@@ -70,7 +70,7 @@ const CATEGORY_COLORS: Record<string, string> = {
  */
 const InfoCard: React.FC<InfoCardProps> = ({
   marker,
-  orientation,
+  orientation: _orientation,
   isTablet,
 }) => {
   const theme = useTheme();
